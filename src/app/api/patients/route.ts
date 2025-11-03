@@ -144,7 +144,7 @@ export async function POST(req: Request) {
                     if (origin) resolvedRedirect = origin;
                     else if (host) resolvedRedirect = `${proto}://${host}`;
                 }
-                if (!resolvedRedirect) resolvedRedirect = 'https://epc.dhruv.tech';
+                if (!resolvedRedirect) resolvedRedirect = 'http://localhost:3000';
 
                 const body: any = { email, redirect_to: `${resolvedRedirect.replace(/\/$/, '')}/set-password` };
                 const resp = await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/otp`, {
