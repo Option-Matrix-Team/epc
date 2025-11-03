@@ -15,8 +15,8 @@ export async function GET(req: Request) {
         if (userType === 'Admin') {
             const { data: admins, error: adminsErr } = await supabase
                 .from('admins')
-                // only non-deleted admins; include role_id so client can read it
-                .select('user_id,is_active,is_deleted,role_id')
+                // only non-deleted admins; include role_id and phone_number so client can read it
+                .select('user_id,is_active,is_deleted,role_id,phone_number')
                 .eq('is_deleted', false);
 
             if (adminsErr) throw adminsErr;
@@ -39,7 +39,7 @@ export async function GET(req: Request) {
                     }
 
                     if (authUser) {
-                        users.push({ ...authUser, profile, admin: { is_active: a.is_active, is_deleted: a.is_deleted, role_id: a.role_id } });
+                        users.push({ ...authUser, profile, admin: { is_active: a.is_active, is_deleted: a.is_deleted, role_id: a.role_id, phone_number: (a as any).phone_number ?? null } });
                     }
                 } catch (e) {
                     console.warn('Failed to fetch auth user for admin', userId, e);
@@ -69,6 +69,7 @@ export async function POST(req: Request) {
 
         const body = await req.json();
         const { email, password, name, role, userType } = body;
+        const phone_number = body?.phone_number ?? body?.phoneNumber ?? null;
         const supabase = getSupabaseAdmin();
 
         if (!email) {
@@ -102,6 +103,7 @@ export async function POST(req: Request) {
                     const roleId = body?.role_id ?? body?.roleId ?? null;
                     const upsertPayload: any = { user_id: userId };
                     if (roleId !== undefined && roleId !== null && String(roleId).length) upsertPayload.role_id = roleId;
+                    if (phone_number !== undefined && phone_number !== null && String(phone_number).length) upsertPayload.phone_number = String(phone_number);
                     const upsertAdmin: any = await supabase.from('admins').upsert([upsertPayload], { onConflict: 'user_id' });
                     if (upsertAdmin?.error) {
                         console.warn('Failed to upsert into admins table:', upsertAdmin.error);
@@ -155,8 +157,8 @@ export async function POST(req: Request) {
 
                 if (!resolvedRedirect) {
                     // As a last resort, fallback to localhost dev URL and log a warning.
-                    resolvedRedirect = 'https://epc.dhruv.tech';
-                    console.warn('Could not determine application origin for redirect_to; falling back to https://epc.dhruv.tech. Set NEXT_PUBLIC_APP_URL in env to avoid this.');
+                    resolvedRedirect = 'http://localhost:3000';
+                    console.warn('Could not determine application origin for redirect_to; falling back to http://localhost:3000. Set NEXT_PUBLIC_APP_URL in env to avoid this.');
                 }
 
                 const body: any = { email, redirect_to: `${resolvedRedirect.replace(/\/$/, '')}/set-password` };
@@ -192,6 +194,7 @@ export async function PATCH(req: Request) {
         const supabase = getSupabaseAdmin();
         const body = await req.json();
         const { action, userId, isActive, name, email, role } = body || {};
+        const phone_number = (body as any)?.phone_number ?? (body as any)?.phoneNumber ?? undefined;
 
         if (!action || !userId) {
             return NextResponse.json({ error: 'action and userId are required' }, { status: 400 });
@@ -250,6 +253,14 @@ export async function PATCH(req: Request) {
                         }
                     }
                 } catch (err) { /* ignore */ }
+
+                // If phone_number provided, update admins table
+                try {
+                    if (phone_number !== undefined) {
+                        const { error: phoneErr } = await supabase.from('admins').update({ phone_number: phone_number }).eq('user_id', userId);
+                        if (phoneErr) console.warn('Failed to update admins.phone_number', phoneErr);
+                    }
+                } catch (perr) { /* ignore */ }
 
                 return NextResponse.json({ ok: true });
             } catch (e: any) {

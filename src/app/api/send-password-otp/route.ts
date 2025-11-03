@@ -3,9 +3,6 @@ import { NextResponse } from 'next/server';
 import getSupabaseAdmin from '@/lib/supabaseAdmin'; // Your admin client
 import { Resend } from 'resend';
 
-// Ensure RESEND_API_KEY is in your environment variables (.env.local)
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 export async function POST(req: Request) {
     try {
         const { email } = await req.json();
@@ -47,13 +44,15 @@ export async function POST(req: Request) {
             throw new Error("Failed to prepare verification code.");
         }
 
-        // 4. Send OTP via Resend
-        // Ensure RESEND_SENDER_EMAIL is in your environment variables (.env.local)
+        // 4. Send OTP via Resend (instantiate client safely at runtime)
+        const resendApiKey = process.env.RESEND_API_KEY;
         const senderEmail = process.env.RESEND_SENDER_EMAIL;
-        if (!senderEmail) {
-            console.error("OTP Send Error: RESEND_SENDER_EMAIL env var is not set.");
+        if (!resendApiKey || !senderEmail) {
+            console.error("OTP Send Error: RESEND configuration is not set (RESEND_API_KEY or RESEND_SENDER_EMAIL).");
             throw new Error("Email configuration error.");
         }
+
+        const resend = new Resend(resendApiKey);
 
         const { error: emailError } = await resend.emails.send({
             from: senderEmail, // Use the configured sender email

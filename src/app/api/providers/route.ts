@@ -81,6 +81,14 @@ export async function POST(req: Request) {
         if (!email) {
             return NextResponse.json({ error: 'Email is required' }, { status: 400 });
         }
+        if (!name || String(name).trim().length < 2) {
+            return NextResponse.json({ error: 'Name is required' }, { status: 400 });
+        }
+        // basic email format check
+        const emailOk = /.+@.+\..+/.test(String(email));
+        if (!emailOk) {
+            return NextResponse.json({ error: 'Invalid email format' }, { status: 400 });
+        }
 
         const tempPassword = password || Math.random().toString(36).slice(2, 10) + 'A1!';
 
@@ -142,7 +150,7 @@ export async function POST(req: Request) {
                     if (origin) resolvedRedirect = origin;
                     else if (host) resolvedRedirect = `${proto}://${host}`;
                 }
-                if (!resolvedRedirect) resolvedRedirect = 'https://epc.dhruv.tech';
+                if (!resolvedRedirect) resolvedRedirect = 'http://localhost:3000';
 
                 const body: any = { email, redirect_to: `${resolvedRedirect.replace(/\/$/, '')}/set-password` };
                 const resp = await fetch(`${supabaseUrl.replace(/\/$/, '')}/auth/v1/otp`, {
@@ -192,7 +200,14 @@ export async function PATCH(req: Request) {
         if (action === 'edit') {
             try {
                 const updateReq: any = {};
-                if (email) updateReq.email = email;
+                if (email) {
+                    const emailOk = /.+@.+\..+/.test(String(email));
+                    if (!emailOk) return NextResponse.json({ error: 'Invalid email format' }, { status: 400 });
+                    updateReq.email = email;
+                }
+                if (name) {
+                    if (String(name).trim().length < 2) return NextResponse.json({ error: 'Name must be at least 2 characters' }, { status: 400 });
+                }
                 if (name || role) updateReq.user_metadata = { ...(name ? { name } : {}), ...(role ? { role } : {}) };
                 if (Object.keys(updateReq).length > 0) {
                     try {
@@ -230,6 +245,7 @@ export async function PATCH(req: Request) {
         if (action === 'reset_password') {
             const { password: newPassword } = body || {};
             if (!newPassword) return NextResponse.json({ error: 'password is required' }, { status: 400 });
+            if (String(newPassword).length < 8) return NextResponse.json({ error: 'password must be at least 8 characters' }, { status: 400 });
             try {
                 // @ts-ignore
                 const updateRes: any = await (supabase as any).auth.admin.updateUserById(patientId, { password: newPassword });

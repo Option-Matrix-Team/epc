@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Datatable from "@/core/common/dataTable";
 import { all_routes } from "@/routes/all_routes";
 import Link from "next/link";
+import getSupabaseClient from "@/lib/supabaseClient";
 import CommonSelect from "@/core/common/common-select/commonSelect";
 import { StatusActive } from "@/core/common/selectOption";
 import ImageWithBasePath from "@/core/imageWithBasePath";
+import SearchInput from "@/core/common/dataTable/dataTableSearch";
 
 const TechniciansComponent = () => {
     // State declarations at the top (deduplicated)
@@ -37,10 +39,163 @@ const TechniciansComponent = () => {
     const [resetConfirm, setResetConfirm] = useState("");
     const [resetShowPassword, setResetShowPassword] = useState(false);
     const [resetShowConfirm, setResetShowConfirm] = useState(false);
+    // modal submit loading flags
+    const [isAdding, setIsAdding] = useState(false);
+    const [isSavingEdit, setIsSavingEdit] = useState(false);
+    const [isResetting, setIsResetting] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
 
-    // New states for submit button loading and filter
-    const [isAddingTechnician, setIsAddingTechnician] = useState(false);
-    const [searchText, setSearchText] = useState("");
+    // Filters UI state
+    type Filters = {
+        roleId: string;
+        address: string;
+        zip: string;
+        stateId: string;
+        cityId: string;
+        status: '' | 'active' | 'inactive';
+    };
+    const [showFilters, setShowFilters] = useState(false);
+    const [filtersDraft, setFiltersDraft] = useState<Filters>({ roleId: '', address: '', zip: '', stateId: '', cityId: '', status: '' });
+    const [appliedFilters, setAppliedFilters] = useState<Filters>({ roleId: '', address: '', zip: '', stateId: '', cityId: '', status: '' });
+    const filtersPanelRef = useRef<HTMLDivElement | null>(null);
+    const [searchText, setSearchText] = useState<string>("");
+
+    // Saved Searches state
+    const SCREEN_KEY = 'technicians';
+    const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    type SavedSearch = { id: string; name: string; filters: Filters };
+    const [savedSearches, setSavedSearches] = useState<SavedSearch[]>([]);
+    const [selectedSavedSearch, setSelectedSavedSearch] = useState<string>('');
+    const [showSaveSearchModal, setShowSaveSearchModal] = useState(false);
+    const [saveSearchName, setSaveSearchName] = useState('');
+    const [isSavingSearch, setIsSavingSearch] = useState(false);
+
+    // CSV helper functions
+    const downloadCSV = () => {
+        try {
+            const headers = ['Name', 'Email', 'Role', 'Address', 'Zip', 'State', 'City'];
+            const rows = data.map(record => {
+                const roleId = record?.technician?.role_id ?? record?.profile?.role_id ?? record?.user_metadata?.role_id ?? record?.role_id;
+                const roleName = (roleId && rolesMap[String(roleId)]) ? rolesMap[String(roleId)] : (record.profile?.user_type ?? record?.user_metadata?.role ?? 'User');
+                const stateId = record?.technician?.state_id;
+                const cityId = record?.technician?.city_id;
+                const stateName = stateId ? (states.find(s => s.id === stateId)?.name ?? '') : '';
+                const cityName = cityId ? (cities.find(c => c.id === cityId)?.name ?? '') : '';
+                return [
+                    record.user_metadata?.name ?? record.email,
+                    record.email ?? '',
+                    roleName,
+                    record?.technician?.address ?? '',
+                    record?.technician?.zip ?? '',
+                    stateName,
+                    cityName
+                ];
+            });
+            const csvContent = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `technicians_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+            showToast('CSV downloaded successfully', 'success');
+        } catch (e: any) {
+            showToast('Failed to download CSV: ' + e.message, 'danger');
+        }
+    };
+
+    const downloadTemplate = () => {
+        try {
+            const headers = ['Name', 'Email', 'Role', 'Address', 'Zip', 'State', 'City'];
+            const sampleRow = ['John Doe', 'john@example.com', 'Lab Technician', '123 Main St', '12345', 'California', 'Los Angeles'];
+            const csvContent = [headers, sampleRow].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'technicians_template.csv';
+            link.click();
+            URL.revokeObjectURL(link.href);
+            showToast('Template downloaded successfully', 'success');
+        } catch (e: any) {
+            showToast('Failed to download template: ' + e.message, 'danger');
+        }
+    };
+
+    const handleCSVUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        try {
+            const text = await file.text();
+            const lines = text.split('\n').filter(line => line.trim());
+            if (lines.length < 2) throw new Error('CSV file is empty or invalid');
+
+            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+            const rows = lines.slice(1);
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const row of rows) {
+                const values = row.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+                const [name, email, roleName, address, zip, stateName, cityName] = values;
+
+                if (!name || !email || !roleName) {
+                    errorCount++;
+                    continue;
+                }
+
+                try {
+                    // Find role by name
+                    const roleEntry = Object.entries(rolesMap).find(([_, rName]) => rName.toLowerCase() === roleName.toLowerCase());
+                    const role_id = roleEntry ? roleEntry[0] : null;
+
+                    // Find state by name
+                    const state = states.find(s => s.name.toLowerCase() === stateName.toLowerCase());
+                    const state_id = state?.id ?? null;
+
+                    // Find city by name and state
+                    const city = state_id ? cities.find(c => c.name.toLowerCase() === cityName.toLowerCase() && c.state_id === state_id) : null;
+                    const city_id = city?.id ?? null;
+
+                    const headers: any = { 'Content-Type': 'application/json' };
+                    const adminSecret = (typeof process !== 'undefined' && (process as any).env?.NEXT_PUBLIC_ADMIN_API_SECRET) ? (process as any).env.NEXT_PUBLIC_ADMIN_API_SECRET : undefined;
+                    if (adminSecret) headers['x-admin-secret'] = adminSecret;
+
+                    const res = await fetch('/api/technicians', {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({
+                            email,
+                            name,
+                            role: roleName,
+                            role_id,
+                            userType: 'Technician',
+                            address: address || null,
+                            zip: zip || null,
+                            state_id,
+                            city_id
+                        })
+                    });
+                    const json = await res.json();
+                    if (json.error) throw new Error(json.error);
+                    successCount++;
+                } catch (e: any) {
+                    console.error(`Failed to import technician ${email}:`, e);
+                    errorCount++;
+                }
+            }
+
+            await fetchTechnicians();
+            showToast(`Import complete: ${successCount} technicians added, ${errorCount} failed`, successCount > 0 ? 'success' : 'danger');
+        } catch (e: any) {
+            showToast('Failed to upload CSV: ' + e.message, 'danger');
+        } finally {
+            setIsUploading(false);
+            event.target.value = ''; // Reset file input
+        }
+    };
 
     const ensureToastContainer = () => {
         let container = document.getElementById('global_toast_container');
@@ -167,14 +322,132 @@ const TechniciansComponent = () => {
         }
     };
 
+    // Saved Searches functions
+    const loadSavedSearches = async () => {
+        if (!currentUserId) return;
+        try {
+            const sb = getSupabaseClient();
+            const { data, error } = await sb
+                .from('saved_searches')
+                .select('*')
+                .eq('user_id', currentUserId)
+                .eq('screen', SCREEN_KEY)
+                .order('created_at', { ascending: false });
+            if (error) throw error;
+            const searches = (data || []).map((row: any) => ({
+                id: row.id,
+                name: row.name,
+                filters: row.filters as Filters
+            }));
+            setSavedSearches(searches);
+        } catch (e) {
+            console.debug('[technicians] loadSavedSearches error', e);
+        }
+    };
+
+    const handleSaveSearch = async () => {
+        if (!currentUserId || !saveSearchName.trim()) return;
+        setIsSavingSearch(true);
+        try {
+            const sb = getSupabaseClient();
+            const { error } = await sb.from('saved_searches').insert({
+                user_id: currentUserId,
+                screen: SCREEN_KEY,
+                name: saveSearchName.trim(),
+                filters: filtersDraft
+            });
+            if (error) throw error;
+            showToast('Search saved successfully', 'success');
+            await loadSavedSearches();
+            setSaveSearchName('');
+            setShowSaveSearchModal(false);
+        } catch (e: any) {
+            showToast('Failed to save search: ' + (e.message || 'Unknown error'), 'danger');
+        } finally {
+            setIsSavingSearch(false);
+        }
+    };
+
+    const handleApplySavedSearch = (searchId: string) => {
+        const search = savedSearches.find(s => s.id === searchId);
+        if (!search) return;
+        setFiltersDraft(search.filters);
+        setAppliedFilters(search.filters);
+        setSelectedSavedSearch(searchId);
+    };
+
+    const handleDeleteSavedSearch = async (searchId: string) => {
+        const search = savedSearches.find(s => s.id === searchId);
+        if (!search) return;
+        if (!confirm(`Delete saved search "${search.name}"?`)) return;
+        try {
+            const sb = getSupabaseClient();
+            const { error } = await sb.from('saved_searches').delete().eq('id', searchId);
+            if (error) throw error;
+            showToast('Search deleted successfully', 'success');
+            if (selectedSavedSearch === searchId) setSelectedSavedSearch('');
+            await loadSavedSearches();
+        } catch (e: any) {
+            showToast('Failed to delete search: ' + (e.message || 'Unknown error'), 'danger');
+        }
+    };
+
+    // Load current user
+    useEffect(() => {
+        (async () => {
+            try {
+                const sb = getSupabaseClient();
+                const { data } = await sb.auth.getUser();
+                setCurrentUserId(data?.user?.id ?? null);
+            } catch (e) {
+                console.debug('[technicians] failed to load user', e);
+            }
+        })();
+    }, []);
+
+    // Load saved searches when user is available
+    useEffect(() => {
+        if (currentUserId) loadSavedSearches();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentUserId]);
+
     const columns = [
-        { title: 'Name', dataIndex: 'user_metadata.name', render: (val: any, record: any) => record.user_metadata?.name ?? record.email },
-        { title: 'Email', dataIndex: 'email' },
         {
-            title: 'Role', dataIndex: 'user_metadata.role', render: (val: any, record: any) => {
+            title: 'Name',
+            dataIndex: 'user_metadata.name',
+            sorter: (a: any, b: any) => (a.user_metadata?.name ?? a.email ?? '').localeCompare(b.user_metadata?.name ?? b.email ?? ''),
+            render: (val: any, record: any) => record.user_metadata?.name ?? record.email
+        },
+        {
+            title: 'Email',
+            dataIndex: 'email',
+            sorter: (a: any, b: any) => (a.email ?? '').localeCompare(b.email ?? '')
+        },
+        {
+            title: 'Role',
+            dataIndex: 'user_metadata.role',
+            sorter: (a: any, b: any) => {
+                const aRoleId = a?.technician?.role_id ?? a?.profile?.role_id ?? a?.user_metadata?.role_id ?? a?.role_id;
+                const bRoleId = b?.technician?.role_id ?? b?.profile?.role_id ?? b?.user_metadata?.role_id ?? b?.role_id;
+                const aRole = (aRoleId && rolesMap[String(aRoleId)]) ? rolesMap[String(aRoleId)] : (a.profile?.user_type ?? a?.user_metadata?.role ?? 'User');
+                const bRole = (bRoleId && rolesMap[String(bRoleId)]) ? rolesMap[String(bRoleId)] : (b.profile?.user_type ?? b?.user_metadata?.role ?? 'User');
+                return aRole.localeCompare(bRole);
+            },
+            render: (val: any, record: any) => {
                 const roleId = record?.technician?.role_id ?? record?.profile?.role_id ?? record?.user_metadata?.role_id ?? record?.role_id;
                 if (roleId && rolesMap[String(roleId)]) return rolesMap[String(roleId)];
                 return record.profile?.user_type ?? val ?? 'User';
+            }
+        },
+
+        {
+            title: 'Reset Password', render: (v: any, r: any) => {
+                const userId = r?.id ?? r?.user?.id ?? r?.user?.user?.id;
+                return (
+                    <div>
+                        <a href="#" className="text-primary" onClick={(e) => { e.preventDefault(); handleResetOpen(r); }} title="Reset Password"><i className="ti ti-key" /></a>
+                    </div>
+                );
             }
         },
         {
@@ -216,18 +489,106 @@ const TechniciansComponent = () => {
                 );
             }
         }
-        ,
-        {
-            title: 'Reset Password', render: (v: any, r: any) => {
-                const userId = r?.id ?? r?.user?.id ?? r?.user?.user?.id;
-                return (
-                    <div>
-                        <a href="#" className="text-primary" onClick={(e) => { e.preventDefault(); handleResetOpen(r); }} title="Reset Password"><i className="ti ti-key" /></a>
-                    </div>
-                );
-            }
-        }
+
     ];
+
+    // Flatten fields for filtering
+    const processedData = useMemo(() => {
+        return (data || []).map((record: any) => {
+            const roleId = record?.technician?.role_id ?? record?.profile?.role_id ?? record?.user_metadata?.role_id ?? record?.role_id ?? null;
+            return {
+                ...record,
+                name_flat: record?.user_metadata?.name ?? record?.email ?? '',
+                email_flat: record?.email ?? '',
+                role_id_flat: roleId,
+                address_flat: record?.technician?.address ?? '',
+                zip_flat: record?.technician?.zip ?? '',
+                state_id_flat: record?.technician?.state_id ?? null,
+                city_id_flat: record?.technician?.city_id ?? null,
+                is_active_flat: !!(record?.technician?.is_active)
+            };
+        });
+    }, [data]);
+
+    // Apply filters when Go is clicked
+    const filteredData = useMemo(() => {
+        const f = appliedFilters;
+        let rows = processedData;
+        if (f.roleId) { rows = rows.filter((r: any) => String(r?.role_id_flat ?? '') === String(f.roleId)); }
+        if (f.address.trim()) { const q = f.address.trim().toLowerCase(); rows = rows.filter((r: any) => (r?.address_flat || '').toLowerCase().includes(q)); }
+        if (f.zip.trim()) { const q = f.zip.trim().toLowerCase(); rows = rows.filter((r: any) => (r?.zip_flat || '').toString().toLowerCase().includes(q)); }
+        if (f.stateId) rows = rows.filter((r: any) => String(r?.state_id_flat ?? '') === String(f.stateId));
+        if (f.cityId) rows = rows.filter((r: any) => String(r?.city_id_flat ?? '') === String(f.cityId));
+        if (f.status) rows = rows.filter((r: any) => f.status === 'active' ? !!r?.is_active_flat : !r?.is_active_flat);
+        return rows;
+    }, [processedData, appliedFilters]);
+
+    // Grid Columns: user-specific visibility
+    const [visibleColIds, setVisibleColIds] = useState<Set<string> | null>(null);
+    const [isSavingCols, setIsSavingCols] = useState(false);
+
+    const getColId = (col: any) => {
+        if (col?.key !== undefined && col?.key !== null) return String(col.key);
+        if (col?.dataIndex !== undefined && col?.dataIndex !== null) return String(col.dataIndex);
+        if (col?.title) return String(col.title).toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_\.]/gi, '');
+        return Math.random().toString(36).slice(2, 9);
+    };
+
+    const allColIds = useMemo(() => columns.map(getColId), [columns]);
+    const columnsFiltered = useMemo(() => {
+        if (!visibleColIds || visibleColIds.size === 0) return columns;
+        return columns.filter(c => visibleColIds.has(getColId(c)));
+    }, [columns, visibleColIds]);
+
+    useEffect(() => {
+        let mounted = true;
+        (async () => {
+            try {
+                const sb = (await import('@/lib/supabaseClient')).default();
+                const { data: userData } = await sb.auth.getUser();
+                const uid = userData?.user?.id ?? null;
+                if (mounted) setCurrentUserId(uid);
+                if (!uid) {
+                    const ls = localStorage.getItem(`grid_columns_${SCREEN_KEY}`);
+                    if (ls) { try { const arr = JSON.parse(ls); if (Array.isArray(arr)) setVisibleColIds(new Set(arr)); else setVisibleColIds(new Set(allColIds)); } catch { setVisibleColIds(new Set(allColIds)); } }
+                    else setVisibleColIds(new Set(allColIds));
+                    return;
+                }
+                const { data, error } = await sb.from('grid_columns_prefs').select('visible_columns').eq('user_id', uid).eq('screen', SCREEN_KEY).maybeSingle();
+                if (error) throw error;
+                const vis = Array.isArray(data?.visible_columns) && data?.visible_columns?.length ? new Set<string>(data!.visible_columns as any) : new Set(allColIds);
+                if (mounted) setVisibleColIds(vis);
+            } catch (e) {
+                try {
+                    const ls = localStorage.getItem(`grid_columns_${SCREEN_KEY}`);
+                    if (ls) { const arr = JSON.parse(ls); setVisibleColIds(new Set(arr)); } else setVisibleColIds(new Set(allColIds));
+                } catch { setVisibleColIds(new Set(allColIds)); }
+            }
+        })();
+        return () => { mounted = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [SCREEN_KEY, allColIds.join('|')]);
+
+    const handleSaveGridColumns = async () => {
+        try {
+            setIsSavingCols(true);
+            const ids = Array.from(visibleColIds ?? new Set(allColIds));
+            try { localStorage.setItem(`grid_columns_${SCREEN_KEY}`, JSON.stringify(ids)); } catch { }
+            try {
+                const sb = (await import('@/lib/supabaseClient')).default();
+                if (currentUserId) {
+                    const { error } = await sb.from('grid_columns_prefs').upsert({ user_id: currentUserId, screen: SCREEN_KEY, visible_columns: ids }, { onConflict: 'user_id,screen' });
+                    if (error) throw error;
+                }
+            } catch { }
+            showToast('Grid columns saved', 'success');
+            try { const el = document.getElementById('grid_columns_technicians'); const bs = (window as any).bootstrap; if (el && bs?.Modal) bs.Modal.getOrCreateInstance(el).hide(); } catch { }
+        } catch (e: any) {
+            showToast(e?.message || 'Failed to save grid columns', 'danger');
+        } finally { setIsSavingCols(false); }
+    };
+
+    const resetGridColumns = () => setVisibleColIds(new Set(allColIds));
 
     const handleResetOpen = (record: any) => {
         const userId = record?.id ?? record?.user?.id ?? record?.user?.user?.id ?? null;
@@ -261,9 +622,10 @@ const TechniciansComponent = () => {
         e.preventDefault();
         const userId = resetUserId;
         if (!userId) return showToast('Technician id missing', 'danger');
-        if (!resetPassword || resetPassword.length < 6) return showToast('Password must be at least 6 characters', 'danger');
+        if (!resetPassword || resetPassword.length < 8) return showToast('Password must be at least 8 characters', 'danger');
         if (resetPassword !== resetConfirm) return showToast('Passwords do not match', 'danger');
         try {
+            setIsResetting(true);
             setLoadingIds(prev => ({ ...prev, [userId]: true }));
             const headers: any = { 'Content-Type': 'application/json' };
             const adminSecret = (typeof process !== 'undefined' && (process as any).env?.NEXT_PUBLIC_ADMIN_API_SECRET)
@@ -282,35 +644,26 @@ const TechniciansComponent = () => {
         } catch (e: any) {
             showToast(e.message || 'Failed to reset password', 'danger');
         } finally {
+            setIsResetting(false);
             if (userId) setLoadingIds(prev => { const c = { ...prev }; delete c[userId]; return c; });
         }
     };
 
-    // Derived state for form validation
     const isAddFormValid = useMemo(() => {
-        return !!(name && email && role && addStateId && addCityId && addAddress && addZip);
-    }, [name, email, role, addStateId, addCityId, addAddress, addZip]);
-
-    const isEditFormValid = useMemo(() => {
-        return !!(editingUser && editName && editEmail && editRole && editStateId && editCityId && editAddress && editZip);
-    }, [editingUser, editName, editEmail, editRole, editStateId, editCityId, editAddress, editZip]);
-
-    const isResetFormValid = useMemo(() => {
-        return !!(resetPassword && resetPassword.length >= 6 && resetPassword === resetConfirm);
-    }, [resetPassword, resetConfirm]);
-
+        const emailValid = !!email && email.includes('@');
+        const nameValid = !!name && name.trim().length > 1;
+        const roleValid = !!role && String(role).length > 0; // require role selection
+        return emailValid && nameValid && roleValid;
+    }, [email, name, role]);
 
     const handleAddTechnician = async (e: any) => {
         e.preventDefault();
-
-        // Mandatory field check
         if (!isAddFormValid) {
-            showToast('Please fill out all required fields.', 'danger');
+            showToast('Please provide valid name, email, and role', 'danger');
             return;
         }
-
-        setIsAddingTechnician(true); // Show loader
         try {
+            setIsAdding(true);
             const headers: any = { 'Content-Type': 'application/json' };
             const adminSecret = (typeof process !== 'undefined' && (process as any).env?.NEXT_PUBLIC_ADMIN_API_SECRET)
                 ? (process as any).env.NEXT_PUBLIC_ADMIN_API_SECRET
@@ -337,7 +690,7 @@ const TechniciansComponent = () => {
         } catch (err: any) {
             showToast(err.message || 'Failed to add technician', 'danger');
         } finally {
-            setIsAddingTechnician(false); // Hide loader
+            setIsAdding(false);
         }
     };
 
@@ -465,15 +818,15 @@ const TechniciansComponent = () => {
         }
     };
 
+    const isEditFormValid = useMemo(() => {
+        const emailValid = !!editEmail && editEmail.includes('@');
+        const nameValid = !!editName && editName.trim().length > 1;
+        const roleValid = !!editRole && String(editRole).length > 0;
+        return emailValid && nameValid && roleValid;
+    }, [editEmail, editName, editRole]);
+
     const handleEditSubmit = async (e: any) => {
         e.preventDefault();
-
-        // Mandatory field check
-        if (!isEditFormValid) {
-            showToast('Please fill out all required fields.', 'danger');
-            return;
-        }
-
         if (!editingUser?.id) return alert('No editing technician');
         const userId = editingUser.id;
         try {
@@ -482,6 +835,7 @@ const TechniciansComponent = () => {
                 ? (process as any).env.NEXT_PUBLIC_ADMIN_API_SECRET
                 : undefined;
             if (adminSecret) headers['x-admin-secret'] = adminSecret;
+            setIsSavingEdit(true);
             setLoadingIds(prev => ({ ...prev, [userId]: true }));
             const res = await fetch('/api/technicians', { method: 'PATCH', headers, body: JSON.stringify({ action: 'edit', patientId: userId, email: editEmail, name: editName, role: rolesMap[editRole] || editRole, role_id: editRole || null, address: editAddress, zip: editZip, state_id: editStateId, city_id: editCityId }) });
             const json = await res.json();
@@ -496,15 +850,10 @@ const TechniciansComponent = () => {
         } catch (e: any) {
             setLoadingIds(prev => { const c = { ...prev }; if (userId) delete c[userId]; return c; });
             showToast(e.message || 'Failed to update technician', 'danger');
+        } finally {
+            setIsSavingEdit(false);
         }
-    };
-
-    // Determine loading state for edit button
-    const isEditing = !!(editingUser && loadingIds[editingUser.id]);
-    // Determine loading state for reset password button
-    const isResetting = !!(resetUserId && loadingIds[resetUserId]);
-
-    return (
+    }; return (
         <>
             <div className="page-wrapper">
                 <div className="content">
@@ -512,60 +861,242 @@ const TechniciansComponent = () => {
                         <div className="flex-grow-1"><h4 className="fw-bold mb-0">Technicians <span className="badge badge-soft-primary fw-medium border py-1 px-2 border-primary fs-13 ms-1">
                             Total Technicians : {data.length}
                         </span></h4></div>
-
-                        {/* Filter Input */}
-                        <div className="me-2" style={{ minWidth: '220px' }}>
-                            <input
-                                type="search"
-                                className="form-control"
-                                placeholder="Filter by name, email..."
-                                value={searchText}
-                                onChange={e => setSearchText(e.target.value)}
-                            />
-                        </div>
-
                         <div className="text-end d-flex">
-                            <div className="dropdown me-1">
-                                <Link
-                                    href="#"
-                                    className="btn btn-md fs-14 fw-normal border bg-white rounded text-dark d-inline-flex align-items-center"
-                                    data-bs-toggle="dropdown"
-                                >
-                                    Export
-                                    <i className="ti ti-chevron-down ms-2" />
-                                </Link>
-                                <ul className="dropdown-menu p-2">
-                                    <li>
-                                        <Link className="dropdown-item" href="#">
-                                            Download as PDF
-                                        </Link>
-                                    </li>
-                                    <li>
-                                        <Link className="dropdown-item" href="#">
-                                            Download as Excel
-                                        </Link>
-                                    </li>
-                                </ul>
-                            </div>
 
+
+                            <button
+                                className="btn btn-outline-primary me-2 fs-13 btn-md"
+                                onClick={() => {
+                                    setShowFilters(s => {
+                                        const next = !s;
+                                        if (!s) {
+                                            setTimeout(() => {
+                                                try { document.querySelectorAll('.dropdown-menu.show').forEach(el => el.classList.remove('show')); } catch { }
+                                                filtersPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                            }, 0);
+                                        }
+                                        return next;
+                                    });
+                                }}
+                                title="Toggle filters"
+                            >
+                                <i className="ti ti-filter me-1" /> Filters
+                            </button>
                             {/* <div className="bg-white border shadow-sm rounded px-1 pb-0 text-center d-flex align-items-center justify-content-center">
-                                ... (grid/list view toggle)
-                            </div> */}
-                            <Link href="#" className="btn btn-primary ms-2 fs-13 btn-md" data-bs-toggle="modal" data-bs-target="#add_user">
+                                                            <Link
+                                                                href={all_routes.patients}
+                                                                className="bg-light rounded p-1 d-flex align-items-center justify-content-center"
+                                                            >
+                                                                <i className="ti ti-list fs-14 text-dark" />
+                                                            </Link>
+                                                            <Link
+                                                                href={all_routes.patientsGrid}
+                                                                className="bg-white rounded p-1 d-flex align-items-center justify-content-center"
+                                                            >
+                                                                <i className="ti ti-layout-grid fs-14 text-body" />
+                                                            </Link>
+                                                        </div> */}
+                            <button onClick={downloadTemplate} className="btn btn-secondary me-2 fs-13 btn-md d-flex align-items-center justify-content-center" title="Download Template" style={{ width: '40px', height: '38px', padding: '0' }}>
+                                <i className="ti ti-download" style={{ fontSize: '18px' }} />
+                            </button>
+                            <button onClick={downloadCSV} className="btn btn-info me-2 fs-13 btn-md d-flex align-items-center justify-content-center" title="Download CSV" style={{ width: '40px', height: '38px', padding: '0' }}>
+                                <i className="ti ti-file-download" style={{ fontSize: '18px' }} />
+                            </button>
+                            <label className="btn btn-warning me-2 fs-13 btn-md d-flex align-items-center justify-content-center" title="Upload CSV" style={{ cursor: isUploading ? 'not-allowed' : 'pointer', width: '40px', height: '38px', padding: '0', margin: '0' }}>
+                                {isUploading ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> : <i className="ti ti-upload" style={{ fontSize: '18px' }} />}
+                                <input type="file" accept=".csv" onChange={handleCSVUpload} disabled={isUploading} style={{ display: 'none' }} />
+                            </label>
+                            <button onClick={() => { try { const el = document.getElementById('grid_columns_technicians'); const bs = (window as any).bootstrap; if (el && bs?.Modal) { bs.Modal.getOrCreateInstance(el).show(); } else if (el) { el.classList.add('show'); (el as any).style.display = 'block'; document.body.classList.add('modal-open'); if (!document.querySelector('.modal-backdrop')) { const backdrop = document.createElement('div'); backdrop.className = 'modal-backdrop fade show'; document.body.appendChild(backdrop); } } } catch { } }} className="btn btn-outline-secondary me-2 fs-13 btn-md d-flex align-items-center justify-content-center" title="Grid Columns" style={{ width: '40px', height: '38px', padding: '0' }}>
+                                <i className="ti ti-columns-3" style={{ fontSize: '18px' }} />
+                            </button>
+                            <Link href="#" className="btn btn-primary fs-13 btn-md" data-bs-toggle="modal" data-bs-target="#add_user">
                                 <i className="ti ti-plus me-1" /> New Technician
                             </Link>
                         </div>
                     </div>
+                    {showFilters && (
+                        <div ref={filtersPanelRef} className="border rounded p-3 mb-3">
+                            <div className="row g-3">
+                                <div className="col-sm-6 col-md-3">
+                                    <label className="form-label">Role</label>
+                                    <select className="form-select" value={filtersDraft.roleId} onChange={e => setFiltersDraft(p => ({ ...p, roleId: e.target.value }))}>
+                                        <option value="">All Roles</option>
+                                        {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                                    </select>
+                                </div>
+                                <div className="col-sm-6 col-md-3">
+                                    <label className="form-label">Address</label>
+                                    <input className="form-control" value={filtersDraft.address} onChange={e => setFiltersDraft(p => ({ ...p, address: e.target.value }))} placeholder="Street, area" />
+                                </div>
+                                <div className="col-sm-6 col-md-3">
+                                    <label className="form-label">Zip</label>
+                                    <input className="form-control" value={filtersDraft.zip} onChange={e => setFiltersDraft(p => ({ ...p, zip: e.target.value }))} placeholder="e.g. 12345" />
+                                </div>
+                                <div className="col-sm-6 col-md-3">
+                                    <label className="form-label">State</label>
+                                    <select className="form-select" value={filtersDraft.stateId} onChange={e => setFiltersDraft(p => ({ ...p, stateId: e.target.value, cityId: '' }))}>
+                                        <option value="">All States</option>
+                                        {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                    </select>
+                                </div>
+                                <div className="col-sm-6 col-md-3">
+                                    <label className="form-label">City</label>
+                                    <select className="form-select" value={filtersDraft.cityId} onChange={e => setFiltersDraft(p => ({ ...p, cityId: e.target.value }))}>
+                                        <option value="">All Cities</option>
+                                        {(cities || []).filter(c => !filtersDraft.stateId || String(c.state_id) === String(filtersDraft.stateId)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    </select>
+                                </div>
+                                <div className="col-sm-6 col-md-3">
+                                    <label className="form-label">Status</label>
+                                    <select className="form-select" value={filtersDraft.status} onChange={e => setFiltersDraft(p => ({ ...p, status: e.target.value as Filters['status'] }))}>
+                                        <option value="">All</option>
+                                        <option value="active">Active</option>
+                                        <option value="inactive">Inactive</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div className="d-flex justify-content-end mt-3">
+                                <button type="button" className="btn btn-white border me-2" onClick={() => { setFiltersDraft({ roleId: '', address: '', zip: '', stateId: '', cityId: '', status: '' }); setAppliedFilters({ roleId: '', address: '', zip: '', stateId: '', cityId: '', status: '' }); setSelectedSavedSearch(''); }}>Clear</button>
+                                <button type="button" className="btn btn-success me-2" onClick={() => { setShowSaveSearchModal(true); }} disabled={!filtersDraft.roleId && !filtersDraft.address && !filtersDraft.zip && !filtersDraft.stateId && !filtersDraft.cityId && !filtersDraft.status}>
+                                    <i className="ti ti-device-floppy me-1" /> Save
+                                </button>
+                                <button type="button" className="btn btn-primary me-2" onClick={() => setAppliedFilters(filtersDraft)}>Go</button>
+                                <button type="button" className="btn btn-outline-secondary" onClick={() => setShowFilters(false)} title="Close filters">
+                                    <i className="ti ti-chevron-up" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="d-flex align-items-center justify-content-between flex-wrap">
+                        <div>
+                            <div className="search-set mb-3">
+                                <div className="d-flex align-items-center flex-wrap gap-2">
+                                    {savedSearches.length > 0 && (
+                                        <div className="dropdown mb-0">
+                                            <button className="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" style={{ minWidth: '200px', textAlign: 'left' }}>
+                                                <i className="ti ti-bookmark me-1" />
+                                                {selectedSavedSearch ? (savedSearches.find(s => s.id === selectedSavedSearch)?.name || 'Saved Searches') : 'Saved Searches'}
+                                            </button>
+                                            <ul className="dropdown-menu" style={{ minWidth: '250px' }}>
+                                                {selectedSavedSearch && (
+                                                    <>
+                                                        <li>
+                                                            <button
+                                                                className="dropdown-item text-muted"
+                                                                onClick={() => {
+                                                                    setSelectedSavedSearch('');
+                                                                    setFiltersDraft({ roleId: '', address: '', zip: '', stateId: '', cityId: '', status: '' });
+                                                                    setAppliedFilters({ roleId: '', address: '', zip: '', stateId: '', cityId: '', status: '' });
+                                                                }}
+                                                                style={{ fontSize: '0.9rem' }}
+                                                            >
+                                                                <i className="ti ti-x me-1" /> Clear Selection
+                                                            </button>
+                                                        </li>
+                                                        <li><hr className="dropdown-divider" /></li>
+                                                    </>
+                                                )}
+                                                {savedSearches.map((search) => (
+                                                    <li
+                                                        key={search.id}
+                                                        style={{ position: 'relative' }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '#f8f9fa';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.backgroundColor = '';
+                                                        }}
+                                                    >
+                                                        <div className="d-flex align-items-center justify-content-between px-2 py-1">
+                                                            <button
+                                                                className="btn btn-link text-decoration-none text-start flex-grow-1 p-0 text-dark"
+                                                                onClick={() => handleApplySavedSearch(search.id)}
+                                                                style={{ border: 'none', background: 'none' }}
+                                                            >
+                                                                <i className={`ti ${selectedSavedSearch === search.id ? 'ti-check' : 'ti-bookmark'} me-2`} style={{ fontSize: '0.9rem' }} />
+                                                                {search.name}
+                                                            </button>
+                                                            <button
+                                                                className="btn btn-link text-danger p-0 ms-2"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleDeleteSavedSearch(search.id);
+                                                                }}
+                                                                title="Delete this saved search"
+                                                                style={{ border: 'none', background: 'none', fontSize: '1.1rem' }}
+                                                            >
+                                                                <i className="ti ti-trash" />
+                                                            </button>
+                                                        </div>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    )}
+                                    <div className="table-search d-flex align-items-center mb-0">
+                                        <div className="search-input">
+                                            <SearchInput value={searchText} onChange={setSearchText} />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="d-flex table-dropdown mb-3 right-content align-items-center flex-wrap row-gap-3"></div>
+                    </div>
+
                     <div className="table-responsive">
-                        {/* Pass searchText to Datatable */}
-                        <Datatable columns={columns} dataSource={data} Selection={false} searchText={searchText} />
+                        <Datatable columns={columnsFiltered as any} dataSource={filteredData} Selection={false} searchText={searchText} />
                     </div>
                 </div>
             </div>
 
+
+            {/* Grid Columns Modal */}
+            <div id="grid_columns_technicians" className="modal fade" tabIndex={-1} aria-hidden="true">
+                <div className="modal-dialog modal-dialog-centered">
+                    <div className="modal-content grid-columns-modal">
+                        <div className="modal-header">
+                            <h5 className="modal-title">Manage Grid Columns</h5>
+                        </div>
+                        <div className="modal-body">
+                            {!visibleColIds ? (
+                                <div className="d-flex align-items-center"><span className="spinner-border spinner-border-sm me-2" /> Loading…</div>
+                            ) : (
+                                <div className="row g-2">
+                                    {columns.map((col, idx) => {
+                                        const id = getColId(col);
+                                        const title = String(col?.title ?? id);
+                                        const checked = visibleColIds.has(id);
+                                        return (
+                                            <div className="col-6" key={`${id}-${idx}`}>
+                                                <div className="form-check">
+                                                    <input className="form-check-input" type="checkbox" id={`gc_${id}`} checked={checked} onChange={(e) => {
+                                                        const next = new Set(visibleColIds);
+                                                        if (e.target.checked) next.add(id); else next.delete(id);
+                                                        setVisibleColIds(next);
+                                                    }} />
+                                                    <label className="form-check-label" htmlFor={`gc_${id}`}>{title}</label>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                        <div className="modal-footer">
+                            <button type="button" className="btn btn-white border" onClick={() => { try { const el = document.getElementById('grid_columns_technicians'); const bs = (window as any).bootstrap; if (bs?.Modal) bs.Modal.getOrCreateInstance(el!).hide(); else if (el) { el.classList.remove('show'); (el as any).style.display = 'none'; document.body.classList.remove('modal-open'); const bd = document.querySelector('.modal-backdrop'); bd && bd.remove(); } } catch { } }}>Cancel</button>
+                            <button type="button" className="btn btn-primary" onClick={handleSaveGridColumns} disabled={isSavingCols}>
+                                {isSavingCols ? <span className="spinner-border spinner-border-sm me-2" /> : null}
+                                Save
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
             <div id="reset_password" className="modal fade">
                 <div className="modal-dialog modal-dialog-centered">
-                    <div className="modal-content">
+                    <div className="modal-content tw-form">
                         <div className="modal-header">
                             <h4 className="text-dark modal-title fw-bold">Reset Password</h4>
                             <button type="button" className="btn-close btn-close-modal custom-btn-close" data-bs-dismiss="modal" aria-label="Close"><i className="ti ti-x" /></button>
@@ -573,7 +1104,7 @@ const TechniciansComponent = () => {
                         <form onSubmit={handleResetSubmit}>
                             <div className="modal-body">
                                 <div className="mb-3">
-                                    <label className="form-label">New Password <span className="text-danger">*</span></label>
+                                    <label className="form-label">New Password</label>
                                     <div className="input-group">
                                         <input type={resetShowPassword ? 'text' : 'password'} className="form-control" value={resetPassword} onChange={e => setResetPassword(e.target.value)} />
                                         <button type="button" className="btn btn-light border" onClick={() => setResetShowPassword(s => !s)} aria-label="Toggle password visibility">
@@ -582,7 +1113,7 @@ const TechniciansComponent = () => {
                                     </div>
                                 </div>
                                 <div className="mb-3">
-                                    <label className="form-label">Confirm Password <span className="text-danger">*</span></label>
+                                    <label className="form-label">Confirm Password</label>
                                     <div className="input-group">
                                         <input type={resetShowConfirm ? 'text' : 'password'} className="form-control" value={resetConfirm} onChange={e => setResetConfirm(e.target.value)} />
                                         <button type="button" className="btn btn-light border" onClick={() => setResetShowConfirm(s => !s)} aria-label="Toggle confirm password visibility">
@@ -593,9 +1124,9 @@ const TechniciansComponent = () => {
                             </div>
                             <div className="modal-footer d-flex align-items-center gap-1">
                                 <button type="button" className="btn btn-white border" data-bs-dismiss="modal" onClick={() => { try { hideModalById('reset_password'); } catch (_) { } }}>Cancel</button>
-                                {/* Submit button with loader and disabled state */}
-                                <button type="submit" className="btn btn-primary" disabled={!isResetFormValid || isResetting}>
-                                    {isResetting ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> : 'Set Password'}
+                                <button type="submit" className="btn btn-primary" disabled={!resetPassword || resetPassword.length < 8 || resetPassword !== resetConfirm || isResetting}>
+                                    {isResetting ? <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> : null}
+                                    Set Password
                                 </button>
                             </div>
                         </form>
@@ -606,7 +1137,7 @@ const TechniciansComponent = () => {
 
             <div id="edit_user" className="modal fade">
                 <div className="modal-dialog modal-dialog-centered">
-                    <div className="modal-content">
+                    <div className="modal-content tw-form">
                         <div className="modal-header">
                             <h4 className="text-dark modal-title fw-bold">Edit Technician</h4>
                             <button type="button" className="btn-close btn-close-modal custom-btn-close" data-bs-dismiss="modal" aria-label="Close"><i className="ti ti-x" /></button>
@@ -619,8 +1150,7 @@ const TechniciansComponent = () => {
                                 </div>
                                 <div className="mb-3">
                                     <label className="form-label">Role <span className="text-danger">*</span></label>
-                                    {/* Use form-select for dropdown arrow */}
-                                    <select className="form-select" value={editRole} onChange={e => setEditRole(e.target.value)}>
+                                    <select className="form-control" value={editRole} onChange={e => setEditRole(e.target.value)}>
                                         <option value="">Select role</option>
                                         {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                                     </select>
@@ -629,16 +1159,14 @@ const TechniciansComponent = () => {
                                 <div className="row">
                                     <div className="col-6 mb-3">
                                         <label className="form-label">State <span className="text-danger">*</span></label>
-                                        {/* Use form-select for dropdown arrow */}
-                                        <select className="form-select" value={editStateId ?? ''} onChange={e => { setEditStateId(e.target.value ? Number(e.target.value) : null); setEditCityId(null); }}>
+                                        <select className="form-control" value={editStateId ?? ''} onChange={e => { setEditStateId(e.target.value ? Number(e.target.value) : null); setEditCityId(null); }}>
                                             <option value="">-- Select State --</option>
                                             {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                         </select>
                                     </div>
                                     <div className="col-6 mb-3">
                                         <label className="form-label">City <span className="text-danger">*</span></label>
-                                        {/* Use form-select for dropdown arrow */}
-                                        <select className="form-select" value={editCityId ?? ''} onChange={e => setEditCityId(e.target.value ? Number(e.target.value) : null)}>
+                                        <select className="form-control" value={editCityId ?? ''} onChange={e => setEditCityId(e.target.value ? Number(e.target.value) : null)}>
                                             <option value="">-- Select City --</option>
                                             {(cities || []).filter(c => !editStateId || String(c.state_id) === String(editStateId)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                         </select>
@@ -652,8 +1180,9 @@ const TechniciansComponent = () => {
                             </div>
                             <div className="modal-footer d-flex align-items-center gap-1">
                                 <button type="button" className="btn btn-white border" data-bs-dismiss="modal" onClick={() => { try { hideModalById('edit_user'); } catch (_) { } }}>Cancel</button>
-                                <button type="submit" className="btn btn-primary" disabled={!isEditFormValid || isEditing}>
-                                    {isEditing ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> : 'Save'}
+                                <button type="submit" className="btn btn-primary" disabled={!isEditFormValid || isSavingEdit}>
+                                    {isSavingEdit ? <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> : null}
+                                    Save
                                 </button>
                             </div>
                         </form>
@@ -663,7 +1192,7 @@ const TechniciansComponent = () => {
 
             <div id="add_user" className="modal fade">
                 <div className="modal-dialog modal-dialog-centered">
-                    <div className="modal-content">
+                    <div className="modal-content tw-form">
                         <div className="modal-header">
                             <h4 className="text-dark modal-title fw-bold">New Technician</h4>
                             <button type="button" className="btn-close btn-close-modal custom-btn-close" data-bs-dismiss="modal" aria-label="Close"><i className="ti ti-x" /></button>
@@ -676,8 +1205,7 @@ const TechniciansComponent = () => {
                                 </div>
                                 <div className="mb-3">
                                     <label className="form-label">Role <span className="text-danger">*</span></label>
-                                    {/* Use form-select for dropdown arrow */}
-                                    <select className="form-select" value={role} onChange={e => setRole(e.target.value)}>
+                                    <select className="form-control" value={role} onChange={e => setRole(e.target.value)}>
                                         <option value="">Select role</option>
                                         {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
                                     </select>
@@ -686,16 +1214,14 @@ const TechniciansComponent = () => {
                                 <div className="row">
                                     <div className="col-6 mb-3">
                                         <label className="form-label">State <span className="text-danger">*</span></label>
-                                        {/* Use form-select for dropdown arrow */}
-                                        <select className="form-select" value={addStateId ?? ''} onChange={e => { setAddStateId(e.target.value ? Number(e.target.value) : null); setAddCityId(null); }}>
+                                        <select className="form-control" value={addStateId ?? ''} onChange={e => { setAddStateId(e.target.value ? Number(e.target.value) : null); setAddCityId(null); }}>
                                             <option value="">-- Select State --</option>
                                             {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                                         </select>
                                     </div>
                                     <div className="col-6 mb-3">
                                         <label className="form-label">City <span className="text-danger">*</span></label>
-                                        {/* Use form-select for dropdown arrow */}
-                                        <select className="form-select" value={addCityId ?? ''} onChange={e => setAddCityId(e.target.value ? Number(e.target.value) : null)}>
+                                        <select className="form-control" value={addCityId ?? ''} onChange={e => setAddCityId(e.target.value ? Number(e.target.value) : null)}>
                                             <option value="">-- Select City --</option>
                                             {(cities || []).filter(c => !addStateId || String(c.state_id) === String(addStateId)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                         </select>
@@ -709,15 +1235,54 @@ const TechniciansComponent = () => {
                             </div>
                             <div className="modal-footer d-flex align-items-center gap-1">
                                 <button type="button" className="btn btn-white border" data-bs-dismiss="modal" onClick={() => { try { hideModalById('add_user'); } catch (_) { } }}>Cancel</button>
-                                {/* Submit button with loader and disabled state */}
-                                <button type="submit" className="btn btn-primary" disabled={!isAddFormValid || isAddingTechnician}>
-                                    {isAddingTechnician ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> : 'Add New Technician'}
+                                <button type="submit" className="btn btn-primary" disabled={!isAddFormValid || isAdding}>
+                                    {isAdding ? <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> : null}
+                                    Add New Technician
                                 </button>
                             </div>
                         </form>
                     </div>
                 </div>
             </div>
+
+            {/* Save Search Modal */}
+            <div id="save_search_modal" className={`modal fade ${showSaveSearchModal ? 'show' : ''}`} tabIndex={-1} aria-hidden={!showSaveSearchModal} style={{ display: showSaveSearchModal ? 'block' : 'none' }}>
+                <div className="modal-dialog modal-dialog-centered">
+                    <div className="modal-content">
+                        <div className="modal-header">
+                            <h5 className="modal-title">Save Search</h5>
+                            <button type="button" className="btn-close" onClick={() => { setShowSaveSearchModal(false); setSaveSearchName(''); }}></button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="mb-3">
+                                <label className="form-label">Search Name <span className="text-danger">*</span></label>
+                                <input
+                                    type="text"
+                                    className="form-control"
+                                    value={saveSearchName}
+                                    onChange={(e) => setSaveSearchName(e.target.value)}
+                                    placeholder="Enter a name for this search"
+                                    maxLength={50}
+                                />
+                            </div>
+
+                        </div>
+                        <div className="modal-footer">
+                            <button type="button" className="btn btn-white border" onClick={() => { setShowSaveSearchModal(false); setSaveSearchName(''); }}>Cancel</button>
+                            <button
+                                type="button"
+                                className="btn btn-primary"
+                                onClick={handleSaveSearch}
+                                disabled={!saveSearchName.trim() || isSavingSearch}
+                            >
+                                {isSavingSearch ? <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> : null}
+                                Save Search
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {showSaveSearchModal && <div className="modal-backdrop fade show" onClick={() => { setShowSaveSearchModal(false); setSaveSearchName(''); }}></div>}
         </>
     );
 }

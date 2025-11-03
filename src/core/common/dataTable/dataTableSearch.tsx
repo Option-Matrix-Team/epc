@@ -8,14 +8,14 @@ interface SearchInputProps {
 const SearchInput: React.FC<SearchInputProps> = ({ value, onChange }) => {
   return (
     <>
-     <input
-            type="search"
-            className="form-control form-control-sm"
-            placeholder="Search"
-            aria-controls="DataTables_Table_0"
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-          />
+      <input
+        type="search"
+        className="form-control form-control-sm"
+        placeholder="Search"
+        aria-controls="DataTables_Table_0"
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </>
   );
 };

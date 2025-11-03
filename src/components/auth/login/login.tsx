@@ -1,4 +1,4 @@
-"use client";
+"use client"
 
 import ImageWithBasePath from "@/core/imageWithBasePath";
 import { all_routes } from "@/routes/all_routes";
@@ -10,11 +10,15 @@ type PasswordField = "password" | "confirmPassword";
 
 const LoginComponent = () => {
   const router = useRouter();
-  // Magic link handling effect
+  // If Supabase magic-link landed here with an access_token in the URL fragment,
+  // forward the entire fragment to /set-password so the client Supabase instance
+  // can pick up the session and allow password update.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const hash = window.location.hash || "";
     if (hash.includes("access_token=")) {
+      // preserve fragment when redirecting. Use location.replace to avoid an extra history entry
+      // and to navigate before React paints the login UI when possible.
       try {
         window.location.replace(`/set-password${hash}`);
         return;
@@ -32,8 +36,6 @@ const LoginComponent = () => {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null); // For success feedback
-  const [isForgotPasswordMode, setIsForgotPasswordMode] = useState(false); // <-- New state
 
   const togglePasswordVisibility = (field: PasswordField) => {
     setPasswordVisibility((prevState) => ({
@@ -41,91 +43,6 @@ const LoginComponent = () => {
       [field]: !prevState[field],
     }));
   };
-
-  // --- New Function: Handle Forgot Password ---
-  const handleForgotPassword = async () => {
-    setError(null);
-    setSuccessMessage(null); // Clear previous success messages
-    if (!email) {
-      setError("Please enter your email address.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const supabase = getSupabaseClient();
-      // Get the current base URL for the redirect
-      const redirectTo = `${window.location.origin}/set-password`; // Redirect to your set password page
-
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: redirectTo,
-      });
-
-      if (resetError) throw resetError;
-      setSuccessMessage("Password reset instructions sent to your email. Please check your inbox (and spam folder).");
-      // Optionally switch back to login mode after success
-      // setIsForgotPasswordMode(false);
-    } catch (err: any) {
-      setError(err?.message || "Failed to send password reset email. Please try again.");
-      console.error("Forgot Password Error:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-  // --- End New Function ---
-
-  const handleLogin = async () => {
-    setError(null);
-    setSuccessMessage(null); // Clear previous messages
-    setLoading(true);
-    try {
-      const supabase = getSupabaseClient();
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (signInError) throw signInError;
-
-      // Persist user_type AND name (localStorage)
-      try {
-        const authUser = (data as any)?.user ?? null;
-        const userId = authUser?.id ?? null;
-        let detectedUserType = authUser?.user_metadata?.user_type ?? null;
-        let detectedUserName = authUser?.user_metadata?.name ?? null;
-
-        if (!detectedUserType && userId) {
-          try {
-            const { data: profile } = await supabase.from('profiles').select('user_type').eq('id', userId).maybeSingle();
-            if (profile) {
-              if (profile.user_type) detectedUserType = profile.user_type;
-              try { localStorage.setItem('profile', JSON.stringify(profile)); } catch (_) { }
-            }
-          } catch (pfErr) { /* ignore */ }
-        }
-
-        if (detectedUserType) {
-          try { localStorage.setItem('user_type', detectedUserType); } catch (_) { }
-        } else {
-          console.warn("Could not determine user_type after login.");
-          // Defaulting to admin as per previous logic if needed
-          try { localStorage.setItem('user_type', 'Admin'); } catch (_) { }
-        }
-
-        if (detectedUserName) {
-          try { localStorage.setItem('user_name', detectedUserName); } catch (_) { }
-        }
-
-      } catch (persistErr) {
-        console.debug('[login] failed to persist user data', persistErr);
-      }
-
-      router.push(all_routes.dashboard);
-    } catch (err: any) {
-      setError(err?.message || "Login failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <>
       {/* Start Content */}
@@ -135,12 +52,11 @@ const LoginComponent = () => {
             {/* start row */}
             <div className="row justify-content-center align-items-center vh-100 overflow-auto flex-wrap py-3">
               <div className="col-lg-4 mx-auto">
-                {/* Use onSubmit for form semantics, prevent default handled by button type="button" */}
                 <form
                   className="d-flex justify-content-center align-items-center"
-                  onSubmit={(e) => e.preventDefault()} // Prevent default form submission
                 >
                   <div className="d-flex flex-column justify-content-lg-center p-4 p-lg-0 pb-0 flex-fill">
+
                     <div className="card border-1 p-lg-3 shadow-md rounded-3 mb-4">
                       <div className="card-body">
                         <div className="text-center mb-3">
@@ -151,17 +67,7 @@ const LoginComponent = () => {
                               alt="Logo"
                             />
                           </div>
-                          {/* --- Title Changes Based on Mode --- */}
-                          <h4 className="fw-bold mb-1">
-                            {isForgotPasswordMode ? "Reset Password" : "Welcome Back!"}
-                          </h4>
-                          <p className="text-muted fs-14">
-                            {isForgotPasswordMode ? "Enter your email to receive reset instructions." : "Login to your account"}
-                          </p>
-                          {/* --- End Title Changes --- */}
                         </div>
-
-                        {/* --- Email Input (Always Visible) --- */}
                         <div className="mb-3">
                           <label className="form-label">Email</label>
                           <div className="input-group">
@@ -174,113 +80,142 @@ const LoginComponent = () => {
                               onChange={(e) => setEmail(e.target.value)}
                               className="form-control border-start-0 ps-0"
                               placeholder="you@example.com"
-                              required // Add required attribute
                             />
                           </div>
                         </div>
-
-                        {/* --- Password Input (Conditional) --- */}
-                        {!isForgotPasswordMode && ( // <-- Show only if NOT in forgot password mode
-                          <div className="mb-3">
-                            <label className="form-label">Password</label>
-                            <div className="position-relative">
-                              <div className="pass-group input-group position-relative border rounded">
-                                <span className="input-group-text bg-white border-0">
-                                  <i className="ti ti-lock text-dark fs-14" />
-                                </span>
-                                <input
-                                  type={
-                                    passwordVisibility.password
-                                      ? "text"
-                                      : "password"
-                                  }
-                                  value={password}
-                                  onChange={(e) => setPassword(e.target.value)}
-                                  className="pass-input form-control border-start-0 ps-0"
-                                  placeholder="****************"
-                                />
-                                <span
-                                  className={`ti toggle-password text-dark fs-14 ${passwordVisibility.password
-                                    ? "ti-eye"
-                                    : "ti-eye-off"
-                                    }`}
-                                  style={{ cursor: 'pointer' }} // Add cursor pointer
-                                  onClick={() =>
-                                    togglePasswordVisibility("password")
-                                  }
-                                ></span>
-                              </div>
+                        <div className="mb-3">
+                          <label className="form-label">Password</label>
+                          <div className="position-relative">
+                            <div className="pass-group input-group position-relative border rounded">
+                              <span className="input-group-text bg-white border-0">
+                                <i className="ti ti-lock text-dark fs-14" />
+                              </span>
+                              <input
+                                type={
+                                  passwordVisibility.password
+                                    ? "text"
+                                    : "password"
+                                }
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="pass-input form-control border-start-0 ps-0"
+                                placeholder="****************"
+                              />
+                              <span
+                                className={`ti toggle-password text-dark fs-14 ${passwordVisibility.password
+                                  ? "ti-eye"
+                                  : "ti-eye-off"
+                                  }`}
+                                onClick={() =>
+                                  togglePasswordVisibility("password")
+                                }
+                              ></span>
                             </div>
-                            {/* --- Forgot Password Link --- */}
-                            <div className="text-end mt-1">
-                              <Link
-                                href="#"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  setIsForgotPasswordMode(true);
-                                  setError(null); // Clear login errors when switching mode
-                                  setSuccessMessage(null);
-                                }}
-                                className="text-primary text-decoration-underline fs-13" // Adjusted style
-                              >
-                                Forgot Password?
-                              </Link>
-                            </div>
-                            {/* --- End Forgot Password Link --- */}
                           </div>
-                        )}
-
-                        {/* --- Error & Success Messages --- */}
+                        </div>
+                        {/* <div className="d-flex align-items-center justify-content-between mb-3">
+                          <div className="d-flex align-items-center">
+                            <div className="form-check form-check-md mb-0">
+                              <input
+                                className="form-check-input"
+                                id="remember_me"
+                                type="checkbox"
+                              />
+                              <label
+                                htmlFor="remember_me"
+                                className="form-check-label mt-0 text-dark"
+                              >
+                                Remember Me
+                              </label>
+                            </div>
+                          </div>
+                          <div className="text-end">
+                            <Link
+                              href={all_routes.forgotpasswordbasic}
+                              className="text-danger"
+                            >
+                              Forgot Password?
+                            </Link>
+                          </div>
+                        </div> */}
                         {error && (
-                          <div className="alert alert-danger py-2">{error}</div>
+                          <div className="alert alert-danger">{error}</div>
                         )}
-                        {successMessage && (
-                          <div className="alert alert-success py-2">{successMessage}</div>
-                        )}
-
-                        {/* --- Action Button (Conditional) --- */}
                         <div className="mb-2">
                           <button
-                            type="button" // Use type="button" to prevent default form submission
+                            type="button"
                             disabled={loading}
-                            onClick={isForgotPasswordMode ? handleForgotPassword : handleLogin} // <-- Call correct function based on mode
+                            onClick={async () => {
+                              setError(null);
+                              setLoading(true);
+                              try {
+                                const supabase = getSupabaseClient();
+                                const { data, error: signInError } = await supabase.auth.signInWithPassword({
+                                  email,
+                                  password,
+                                });
+                                if (signInError) throw signInError;
+                                // Persist user_type (localStorage) so Sidebar can filter menus.
+                                try {
+                                  // data may contain user at data.user or data?.user
+                                  const authUser = (data as any)?.user ?? (data as any)?.user ?? null;
+                                  const userId = authUser?.id ?? null;
+                                  // try read from user_metadata first
+                                  let detectedUserType = authUser?.user_metadata?.user_type ?? authUser?.user_metadata?.userType ?? null;
+
+                                  // if not present, try to fetch profile row
+                                  if (!detectedUserType && userId) {
+                                    try {
+                                      const { data: profile } = await supabase.from('profiles').select('user_type').eq('id', userId).maybeSingle();
+                                      if (profile) {
+                                        if (profile.user_type) detectedUserType = profile.user_type;
+                                        try { localStorage.setItem('profile', JSON.stringify(profile)); } catch (_) { }
+                                      }
+                                    } catch (pfErr) {
+                                      // ignore
+                                    }
+                                  }
+
+                                  if (detectedUserType) {
+                                    try { localStorage.setItem('user_type', detectedUserType); } catch (_) { }
+                                  }
+                                } catch (persistErr) {
+                                  console.debug('[login] failed to persist user_type', persistErr);
+                                }
+
+                                // success - redirect to dashboard
+                                router.push(all_routes.dashboard);
+                              } catch (err: any) {
+                                setError(err?.message || "Login failed");
+                              } finally {
+                                setLoading(false);
+                              }
+                            }}
                             className="btn bg-primary text-white w-100"
                           >
-                            {loading ? "Processing..." : (isForgotPasswordMode ? "Send Reset Link" : "Login")} {/* <-- Button text changes */}
+                            {loading ? "Signing in..." : "Login"}
                           </button>
                         </div>
 
-                        {/* --- Link to Switch Back to Login --- */}
-                        {isForgotPasswordMode && (
-                          <div className="text-center mt-3">
-                            <Link
-                              href="#"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                setIsForgotPasswordMode(false);
-                                setError(null); // Clear forgot password errors
-                                setSuccessMessage(null);
-                              }}
-                              className="text-muted text-decoration-underline fs-13"
-                            >
-                              Back to Login
-                            </Link>
-                          </div>
-                        )}
-
-                      </div> {/* end card body */}
-                    </div> {/* end card */}
+                      </div>
+                      {/* end card body */}
+                    </div>
+                    {/* end card */}
                   </div>
                 </form>
                 <p className="text-dark text-center">
-                  Copyright © 2025 - EMR
+
+                  Copyright © 2025 -   EMR
                 </p>
-              </div> {/* end col */}
-            </div> {/* end row */}
+              </div>
+              {/* end col */}
+            </div>
+            {/* end row */}
           </div>
         </div>
       </div>
       {/* End Content */}
+      {/* Start Bg Content - full cover background */}
       <ImageWithBasePath
         src="assets/chartxbg2.jpg"
         alt="background"
@@ -294,6 +229,7 @@ const LoginComponent = () => {
           zIndex: 0,
         }}
       />
+      {/* End Bg Content */}
     </>
   );
 };
