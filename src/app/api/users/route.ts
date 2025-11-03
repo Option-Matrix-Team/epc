@@ -157,8 +157,8 @@ export async function POST(req: Request) {
 
                 if (!resolvedRedirect) {
                     // As a last resort, fallback to localhost dev URL and log a warning.
-                    resolvedRedirect = 'http://localhost:3000';
-                    console.warn('Could not determine application origin for redirect_to; falling back to http://localhost:3000. Set NEXT_PUBLIC_APP_URL in env to avoid this.');
+                    resolvedRedirect = 'https://epc.dhruv.tech';
+                    console.warn('Could not determine application origin for redirect_to; falling back to https://epc.dhruv.tech. Set NEXT_PUBLIC_APP_URL in env to avoid this.');
                 }
 
                 const body: any = { email, redirect_to: `${resolvedRedirect.replace(/\/$/, '')}/set-password` };
