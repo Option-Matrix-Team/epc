@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Datatable from "@/core/common/dataTable";
 import Link from "next/link";
+import "@/style/css/admin-screens.css";
 
 const StatesComponent = () => {
     const [data, setData] = useState<any[]>([]);
@@ -11,6 +12,17 @@ const StatesComponent = () => {
     const [abbreviation, setAbbreviation] = useState("");
     const [editing, setEditing] = useState<any | null>(null);
     const [loadingIds, setLoadingIds] = useState<Record<string, boolean>>({});
+    const [isUploading, setIsUploading] = useState(false);
+
+    // Pagination state
+    const [pageSize, setPageSize] = useState<number>(25);
+    const [currentPage, setCurrentPage] = useState<number>(1);
+
+    // Sorting state
+    const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'name', direction: 'asc' });
+
+    // Search state
+    const [search, setSearch] = useState("");
 
     // Reusable modal hide helper (robust against missing bootstrap API)
     const hideModalById = async (id: string) => {
@@ -90,6 +102,96 @@ const StatesComponent = () => {
             // fallback
             // eslint-disable-next-line no-alert
             alert(message);
+        }
+    };
+
+    // CSV helper functions
+    const downloadCSV = () => {
+        try {
+            const headers = ['State', 'Abbreviation', 'Status'];
+            const rows = data.map(record => [
+                record.name || '',
+                record.abbreviation || '',
+                record.is_active ? 'Active' : 'Inactive'
+            ]);
+            const csvContent = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `states_${new Date().toISOString().split('T')[0]}.csv`;
+            link.click();
+            URL.revokeObjectURL(link.href);
+            showToast('CSV downloaded successfully', 'success');
+        } catch (e: any) {
+            showToast('Failed to download CSV: ' + e.message, 'danger');
+        }
+    };
+
+    const downloadTemplate = () => {
+        try {
+            const headers = ['State', 'Abbreviation'];
+            const sampleRow = ['California', 'CA'];
+            const csvContent = [headers, sampleRow].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'states_template.csv';
+            link.click();
+            URL.revokeObjectURL(link.href);
+            showToast('Template downloaded successfully', 'success');
+        } catch (e: any) {
+            showToast('Failed to download template: ' + e.message, 'danger');
+        }
+    };
+
+    const handleCSVUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        try {
+            const text = await file.text();
+            const lines = text.split('\n').filter(line => line.trim());
+            if (lines.length < 2) throw new Error('CSV file is empty or invalid');
+
+            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+            const rows = lines.slice(1);
+
+            let successCount = 0;
+            let errorCount = 0;
+
+            for (const row of rows) {
+                const values = row.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+                const [stateName, abbr] = values;
+
+                if (!stateName || !abbr) {
+                    errorCount++;
+                    continue;
+                }
+
+                try {
+                    const headers: any = { 'Content-Type': 'application/json' };
+                    const res = await fetch('/api/states', {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({ name: stateName, abbreviation: abbr })
+                    });
+                    const json = await res.json();
+                    if (json.error) throw new Error(json.error);
+                    successCount++;
+                } catch (e: any) {
+                    console.error(`Failed to import state ${stateName}:`, e);
+                    errorCount++;
+                }
+            }
+
+            await fetchStates();
+            showToast(`Import complete: ${successCount} states added, ${errorCount} failed`, successCount > 0 ? 'success' : 'danger');
+        } catch (e: any) {
+            showToast('Failed to upload CSV: ' + e.message, 'danger');
+        } finally {
+            setIsUploading(false);
+            event.target.value = ''; // Reset file input
         }
     };
 
@@ -194,11 +296,83 @@ const StatesComponent = () => {
         }
     };
 
+    const handleSort = (key: string) => {
+        setSortConfig(prev => ({
+            key,
+            direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+        }));
+    };
+
+    // Filtered data based on search
+    const filteredData = useMemo(() => {
+        let d = data;
+        if (search.trim()) {
+            const kw = search.trim().toLowerCase();
+            d = d.filter((row: any) =>
+                (row.name || '').toLowerCase().includes(kw) ||
+                (row.abbreviation || '').toLowerCase().includes(kw)
+            );
+        }
+        return d;
+    }, [data, search]);
+
+    // Sorted data based on sortConfig
+    const sortedData = useMemo(() => {
+        const dataCopy = [...filteredData];
+        dataCopy.sort((a: any, b: any) => {
+            const aVal = a[sortConfig.key] ?? '';
+            const bVal = b[sortConfig.key] ?? '';
+            if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+            if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+            return 0;
+        });
+        return dataCopy;
+    }, [filteredData, sortConfig]);
+
+    // Reset to first page on data-affecting changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [sortConfig, pageSize]);
+
+    const totalItems = sortedData.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    const safePage = Math.min(currentPage, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, totalItems);
+    const pagedData = useMemo(() => sortedData.slice(startIndex, endIndex), [sortedData, startIndex, endIndex]);
+
+    useEffect(() => {
+        // Clamp page if filters reduce total pages
+        if (currentPage > totalPages) setCurrentPage(totalPages);
+    }, [totalPages, currentPage]);
+
     const columns = [
-        { title: 'State', dataIndex: 'name' },
-        { title: 'Abbreviation', dataIndex: 'abbreviation' },
         {
-            title: 'Status', dataIndex: 'is_active', render: (_: any, record: any) => {
+            title: 'Actions',
+            render: (_: any, record: any) => {
+                const id = record?.id;
+                const isLoading = !!(id && loadingIds[id]);
+                if (isLoading) {
+                    return <div><span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>;
+                }
+                return (
+                    <div className="dropdown position-static">
+                        <a href="#" className="text-dark" data-bs-toggle="dropdown" data-bs-boundary="viewport" onClick={(e) => e.preventDefault()}>
+                            <i className="ti ti-dots-vertical" />
+                        </a>
+                        <ul className="dropdown-menu p-2">
+                            <li><a href="#" className="dropdown-item" onClick={(e) => { e.preventDefault(); openEdit(record); }}>Edit</a></li>
+                            <li><a href="#" className="dropdown-item text-danger" onClick={async (e) => { e.preventDefault(); await handleDelete(record); }}>Delete</a></li>
+                        </ul>
+                    </div>
+                );
+            }
+        },
+        {
+            title: 'Status',
+            dataIndex: 'is_active',
+            sortKey: 'is_active',
+            render: (_: any, record: any) => {
                 const isActive = !!record?.is_active;
                 const id = record?.id;
                 const isLoading = !!(id && loadingIds[id]);
@@ -218,64 +392,240 @@ const StatesComponent = () => {
             }
         },
         {
-            title: 'Actions', render: (_: any, record: any) => {
-                const id = record?.id;
-                const isLoading = !!(id && loadingIds[id]);
-                if (isLoading) {
-                    return <div><span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>;
-                }
-                return (
-                    <div className="action-item">
-                        <a href="#" onClick={(e) => e.preventDefault()} data-bs-toggle="dropdown"><i className="ti ti-dots-vertical" /></a>
-                        <ul className="dropdown-menu p-2">
-                            <li><a href="#" className="dropdown-item" onClick={(e) => { e.preventDefault(); openEdit(record); }}>Edit</a></li>
-                            <li><a href="#" className="dropdown-item text-danger" onClick={async (e) => { e.preventDefault(); await handleDelete(record); }}>Delete</a></li>
-                        </ul>
-                    </div>
-                );
-            }
+            title: 'State',
+            dataIndex: 'name',
+            sortKey: 'name'
+        },
+        {
+            title: 'State Code',
+            dataIndex: 'abbreviation',
+            sortKey: 'abbreviation'
         }
     ];
 
     return (
         <>
-            <div className="page-wrapper">
+            <div className="page-wrapper states-screen">
                 <div className="content">
-                    <div className="d-flex align-items-center justify-content-between pb-3 mb-3 border-bottom">
-                        <h4 className="fw-bold mb-0">States <span className="badge badge-soft-primary">Total: {data.length}</span></h4>
-                        <button className="btn btn-primary" data-bs-toggle="modal" data-bs-target="#add_state">Add State</button>
+                    <div className="d-flex align-items-center justify-content-between flex-wrap mb-3 pb-3 border-bottom states-header">
+                        <div className="flex-grow-1">
+                            <h4 className="fw-bold mb-0 text-dark">
+                                States{" "}
+                                <span className="badge badge-soft-primary fw-medium border py-1 px-2 border-primary fs-13 ms-1">
+                                    Total States : {data.length}
+                                </span>
+                            </h4>
+                        </div>
                     </div>
-                    <div className="table-responsive">
-                        <Datatable columns={columns} dataSource={data} Selection={false} searchText={""} />
+
+                    {/* CUSTOM HTML TABLE (matching patients.tsx structure) */}
+                    <div className="states-table-container">
+                        {/* SEARCH BAR AND TOOLBAR BUTTONS */}
+                        <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+                            <input
+                                type="text"
+                                className="form-control"
+                                placeholder="Search by state name or code..."
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                style={{ maxWidth: '220px', height: '36px' }}
+                            />
+                            <div className="d-flex align-items-center flex-wrap gap-2 states-toolbar">
+                                <button onClick={downloadTemplate} className="btn btn-light btn-sm" title="Download Template">
+                                    <i className="ti ti-download" />
+                                </button>
+
+                                <button onClick={downloadCSV} className="btn btn-darkish btn-sm" title="Download CSV">
+                                    <i className="ti ti-file-download" />
+                                </button>
+
+                                <label
+                                    className={`btn btn-darkish btn-sm ${isUploading ? "disabled" : ""}`}
+                                    title="Upload CSV"
+                                    style={{ margin: 0 }}
+                                >
+                                    {isUploading ? (
+                                        <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                    ) : (
+                                        <i className="ti ti-upload" />
+                                    )}
+                                    <input
+                                        type="file"
+                                        accept=".csv"
+                                        onChange={handleCSVUpload}
+                                        disabled={isUploading}
+                                        style={{ display: "none" }}
+                                    />
+                                </label>
+
+                                <button className="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#add_state">
+                                    <i className="ti ti-plus me-1" /> <span>Add State</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div className="table-responsive states-scroll">
+                            <table className="table table-striped table-hover align-middle states-table">
+                                <thead className="table-dark">
+                                    <tr>
+                                        {columns.map((col: any, i: number) => {
+                                            const sortKey = col.sortKey;
+                                            const isSorted = sortKey && sortConfig.key === sortKey;
+                                            const clickable = !!sortKey;
+                                            return (
+                                                <th
+                                                    key={`h-${i}`}
+                                                    onClick={clickable ? () => handleSort(sortKey!) : undefined}
+                                                    style={{ whiteSpace: 'nowrap', cursor: clickable ? 'pointer' : 'default' }}
+                                                >
+                                                    {col.title}{' '}
+                                                    {clickable ? (
+                                                        isSorted ? (
+                                                            sortConfig.direction === 'asc' ? <i className="ti ti-arrow-up" /> : <i className="ti ti-arrow-down" />
+                                                        ) : (
+                                                            <i className="ti ti-arrows-sort opacity-50" />
+                                                        )
+                                                    ) : null}
+                                                </th>
+                                            );
+                                        })}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {pagedData.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={columns.length} className="text-center py-4 text-muted">No states found</td>
+                                        </tr>
+                                    ) : (
+                                        pagedData.map((r: any, idx: number) => (
+                                            <tr key={r.id || idx}>
+                                                {columns.map((col: any, ci: number) => {
+                                                    const getVal = (obj: any, path?: string) => {
+                                                        if (!path) return undefined;
+                                                        return path.split('.').reduce((o: any, k: string) => (o ? o[k] : undefined), obj);
+                                                    };
+                                                    const content = col.render
+                                                        ? col.render(getVal(r, col.dataIndex), r, idx)
+                                                        : (col.dataIndex ? (getVal(r, col.dataIndex) ?? '—') : '—');
+                                                    return <td key={`c-${idx}-${ci}`}>{content}</td>;
+                                                })}
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* PAGINATION (matching patients.tsx structure) */}
+                    <div className="d-flex align-items-center gap-3 mt-2">
+                        <div className="d-flex align-items-center gap-3">
+                            <div className="d-flex align-items-center gap-2">
+                                <span className="text-muted">Items per page:</span>
+                                <select
+                                    className="form-select form-select-sm"
+                                    style={{ width: 80 }}
+                                    value={pageSize}
+                                    onChange={(e) => setPageSize(parseInt(e.target.value, 10) || 10)}
+                                >
+                                    <option value={10}>10</option>
+                                    <option value={25}>25</option>
+                                    <option value={50}>50</option>
+                                    <option value={100}>100</option>
+                                </select>
+                            </div>
+                            <div className="text-muted">
+                                {totalItems === 0 ? '0 – 0 of 0' : `${startIndex + 1} – ${endIndex} of ${totalItems}`}
+                            </div>
+                            <div className="pager-icons d-flex align-items-center gap-1">
+                                <button
+                                    className="icon-btn"
+                                    disabled={safePage <= 1}
+                                    onClick={() => setCurrentPage(1)}
+                                    aria-label="First"
+                                    title="First"
+                                >
+                                    <i className="ti ti-chevrons-left" />
+                                </button>
+                                <button
+                                    className="icon-btn"
+                                    disabled={safePage <= 1}
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    aria-label="Previous"
+                                    title="Previous"
+                                >
+                                    <i className="ti ti-chevron-left" />
+                                </button>
+                                <button
+                                    className="icon-btn"
+                                    disabled={safePage >= totalPages}
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    aria-label="Next"
+                                    title="Next"
+                                >
+                                    <i className="ti ti-chevron-right" />
+                                </button>
+                                <button
+                                    className="icon-btn"
+                                    disabled={safePage >= totalPages}
+                                    onClick={() => setCurrentPage(totalPages)}
+                                    aria-label="Last"
+                                    title="Last"
+                                >
+                                    <i className="ti ti-chevrons-right" />
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
 
             <div id="add_state" className="modal fade">
-                <div className="modal-dialog modal-dialog-centered">
-                    <div className="modal-content">
-                        <div className="modal-header"><h4 className="modal-title">New State</h4><button type="button" className="btn-close" data-bs-dismiss="modal" /></div>
+                <div className="modal-dialog modal-md modal-dialog-centered">
+                    <div className="modal-content patient-form-modal">
+                        <div className="modal-header py-2 px-3 border-0 bg-teal-700 text-white rounded-top">
+                            <h5 className="modal-title fw-semibold">Add State</h5>
+                        </div>
                         <form onSubmit={handleAdd}>
-                            <div className="modal-body">
-                                <div className="mb-3"><label className="form-label">State Name</label><input className="form-control" value={name} onChange={e => setName(e.target.value)} /></div>
-                                <div className="mb-3"><label className="form-label">Abbreviation</label><input className="form-control" value={abbreviation} onChange={e => setAbbreviation(e.target.value)} maxLength={3} /></div>
+                            <div className="modal-body px-4 pt-3 pb-1">
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">State Name: <span className="text-danger">*</span></label>
+                                    <input type="text" className="form-control required-field" placeholder="Enter state name" value={name} onChange={e => setName(e.target.value)} />
+                                </div>
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">State Code: <span className="text-danger">*</span></label>
+                                    <input type="text" className="form-control required-field" placeholder="Enter state code" value={abbreviation} onChange={e => setAbbreviation(e.target.value)} maxLength={3} />
+                                </div>
                             </div>
-                            <div className="modal-footer"><button type="button" className="btn btn-white border" data-bs-dismiss="modal" onClick={() => { try { hideModalById('add_state'); } catch (_) { } }}>Cancel</button><button type="submit" className="btn btn-primary">Add</button></div>
+                            <div className="modal-footer d-flex align-items-center gap-1">
+                                <button type="button" className="btn btn-white border" data-bs-dismiss="modal" onClick={() => { try { hideModalById('add_state'); } catch (_) { } }}>Cancel</button>
+                                <button type="submit" className="btn btn-primary">Add State</button>
+                            </div>
                         </form>
                     </div>
                 </div>
             </div>
 
             <div id="edit_state" className="modal fade">
-                <div className="modal-dialog modal-dialog-centered">
-                    <div className="modal-content">
-                        <div className="modal-header"><h4 className="modal-title">Edit State</h4><button type="button" className="btn-close" data-bs-dismiss="modal" /></div>
+                <div className="modal-dialog modal-md modal-dialog-centered">
+                    <div className="modal-content patient-form-modal">
+                        <div className="modal-header py-2 px-3 border-0 bg-teal-700 text-white rounded-top">
+                            <h5 className="modal-title fw-semibold">Edit State</h5>
+                        </div>
                         <form onSubmit={handleEdit}>
-                            <div className="modal-body">
-                                <div className="mb-3"><label className="form-label">State Name</label><input className="form-control" value={name} onChange={e => setName(e.target.value)} /></div>
-                                <div className="mb-3"><label className="form-label">Abbreviation</label><input className="form-control" value={abbreviation} onChange={e => setAbbreviation(e.target.value)} maxLength={3} /></div>
+                            <div className="modal-body px-4 pt-3 pb-1">
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">State Name: <span className="text-danger">*</span></label>
+                                    <input type="text" className="form-control required-field" placeholder="Enter state name" value={name} onChange={e => setName(e.target.value)} />
+                                </div>
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">State Code: <span className="text-danger">*</span></label>
+                                    <input type="text" className="form-control required-field" placeholder="Enter state code" value={abbreviation} onChange={e => setAbbreviation(e.target.value)} maxLength={3} />
+                                </div>
                             </div>
-                            <div className="modal-footer"><button type="button" className="btn btn-white border" data-bs-dismiss="modal" onClick={() => { try { hideModalById('edit_state'); } catch (_) { } }}>Cancel</button><button type="submit" className="btn btn-primary">Save</button></div>
+                            <div className="modal-footer d-flex align-items-center gap-1">
+                                <button type="button" className="btn btn-white border" data-bs-dismiss="modal" onClick={() => { try { hideModalById('edit_state'); } catch (_) { } }}>Cancel</button>
+                                <button type="submit" className="btn btn-primary">Save Changes</button>
+                            </div>
                         </form>
                     </div>
                 </div>

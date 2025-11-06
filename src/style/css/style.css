@@ -24,7 +24,7 @@ Author URL: https://themeforest.net/user/dreamstechnologies
   --pr-menu-bg: #fff;
   --pr-menu-title-color: #858D9C;
   --pr-menu-item-heading: #0A1B39;
-  --pr-menu-item-color: #6C7688;
+  --pr-menu-item-color: #000000DE;
   --pr-menu-item-border: #E7E8EB;
   --pr-menu-item-hover-color: #2E37A4;
   --pr-menu-item-hover-bg: rgba(0, 211, 199, 0.1);
@@ -403,7 +403,7 @@ Author URL: https://themeforest.net/user/dreamstechnologies
   --pr-gray-200: #B6BBC4;
   --pr-gray-300: #9DA4B0;
   --pr-gray-400: #858D9C;
-  --pr-gray-500: #6C7688;
+  --pr-gray-500: #000000DE;
   --pr-gray-600: #545F74;
   --pr-gray-700: #3B4961;
   --pr-gray-800: #23324D;
@@ -447,7 +447,7 @@ Author URL: https://themeforest.net/user/dreamstechnologies
   --pr-warning-border-subtle: rgb(243.4, 227, 176.6);
   --pr-danger-border-subtle: rgb(248.6, 165, 165);
   --pr-light-border-subtle: #B6BBC4;
-  --pr-dark-border-subtle: #6C7688;
+  --pr-dark-border-subtle: #000000DE;
   --pr-white-rgb: 255, 255, 255;
   --pr-black-rgb: 0, 0, 0;
   --pr-font-sans-serif: "Inter", sans-serif;
@@ -457,7 +457,7 @@ Author URL: https://themeforest.net/user/dreamstechnologies
   --pr-body-font-size: 0.875rem;
   --pr-body-font-weight: 400;
   --pr-body-line-height: 1.5;
-  --pr-body-color: #6C7688;
+  --pr-body-color: #000000DE;
   --pr-body-color-rgb: 108, 118, 136;
   --pr-body-bg: #F5F6F8;
   --pr-body-bg-rgb: 245, 246, 248;
@@ -478,7 +478,7 @@ Author URL: https://themeforest.net/user/dreamstechnologies
   --pr-link-hover-color: #EF1E1E;
   --pr-link-hover-color-rgb: 239, 30, 30;
   --pr-code-color: #DD2590;
-  --pr-highlight-color: #6C7688;
+  --pr-highlight-color: #000000DE;
   --pr-highlight-bg: rgb(249.2, 241, 215.8);
   --pr-border-width: 1px;
   --pr-border-style: solid;
@@ -4506,8 +4506,8 @@ fieldset:disabled .btn {
   --pr-dropdown-link-hover-bg: rgba(255, 255, 255, 0.15);
   --pr-dropdown-link-active-color: #fff;
   --pr-dropdown-link-active-bg: #2E37A4;
-  --pr-dropdown-link-disabled-color: #6C7688;
-  --pr-dropdown-header-color: #6C7688;
+  --pr-dropdown-link-disabled-color: #000000DE;
+  --pr-dropdown-header-color: #000000DE;
 }
 
 .btn-group,
@@ -5492,11 +5492,11 @@ fieldset:disabled .btn {
   --pr-accordion-btn-padding-y: 1rem;
   --pr-accordion-btn-color: var(--pr-body-color);
   --pr-accordion-btn-bg: var(--pr-accordion-bg);
-  --pr-accordion-btn-icon: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%236C7688' stroke-linecap='round' stroke-linejoin='round'%3e%3cpath d='M2 5L8 11L14 5'/%3e%3c/svg%3e");
+  --pr-accordion-btn-icon: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000000DE' stroke-linecap='round' stroke-linejoin='round'%3e%3cpath d='M2 5L8 11L14 5'/%3e%3c/svg%3e");
   --pr-accordion-btn-icon-width: 0.75rem;
   --pr-accordion-btn-icon-transform: rotate(-180deg);
   --pr-accordion-btn-icon-transition: transform 0.2s ease-in-out;
-  --pr-accordion-btn-active-icon: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%236C7688' stroke-linecap='round' stroke-linejoin='round'%3e%3cpath d='M2 5L8 11L14 5'/%3e%3c/svg%3e");
+  --pr-accordion-btn-active-icon: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23000000DE' stroke-linecap='round' stroke-linejoin='round'%3e%3cpath d='M2 5L8 11L14 5'/%3e%3c/svg%3e");
   --pr-accordion-btn-focus-box-shadow: none;
   --pr-accordion-body-padding-x: 1.25rem;
   --pr-accordion-body-padding-y: 1rem;
@@ -18607,7 +18607,7 @@ body.layout-mode-rtl .card .z-n1 img {
 }
 
 [data-bs-theme=dark] .text-body {
-  color: #6C7688 !important;
+  color: #000000DE !important;
 }
 
 [data-bs-theme=dark] .text-dark {
@@ -18998,12 +18998,12 @@ body.layout-mode-rtl .card .z-n1 img {
 
 .accordion.accordion-primary .accordion-button.collapsed {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-primary .accordion-button.collapsed:after {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-secondary .accordion-button {
@@ -19013,12 +19013,12 @@ body.layout-mode-rtl .card .z-n1 img {
 
 .accordion.accordion-secondary .accordion-button.collapsed {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-secondary .accordion-button.collapsed:after {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-success .accordion-button {
@@ -19028,12 +19028,12 @@ body.layout-mode-rtl .card .z-n1 img {
 
 .accordion.accordion-success .accordion-button.collapsed {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-success .accordion-button.collapsed:after {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-danger .accordion-button {
@@ -19043,12 +19043,12 @@ body.layout-mode-rtl .card .z-n1 img {
 
 .accordion.accordion-danger .accordion-button.collapsed {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-danger .accordion-button.collapsed:after {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-warning .accordion-button {
@@ -19058,7 +19058,7 @@ body.layout-mode-rtl .card .z-n1 img {
 
 .accordion.accordion-warning .accordion-button.collapsed {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-warning .accordion-button.collapsed:after {
@@ -19072,12 +19072,12 @@ body.layout-mode-rtl .card .z-n1 img {
 
 .accordion.accordion-info .accordion-button.collapsed {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-info .accordion-button.collapsed:after {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-solid-primary .accordion-button {
@@ -19098,11 +19098,11 @@ body.layout-mode-rtl .card .z-n1 img {
 
 .accordion.accordion-solid-primary .accordion-button.collapsed {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-solid-primary .accordion-button.collapsed:after {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-solid-secondary .accordion-button {
@@ -19123,11 +19123,11 @@ body.layout-mode-rtl .card .z-n1 img {
 
 .accordion.accordion-solid-secondary .accordion-button.collapsed {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-solid-secondary .accordion-button.collapsed:after {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-solid-success .accordion-button {
@@ -19148,11 +19148,11 @@ body.layout-mode-rtl .card .z-n1 img {
 
 .accordion.accordion-solid-success .accordion-button.collapsed {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-solid-success .accordion-button.collapsed:after {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-solid-danger .accordion-button {
@@ -19173,11 +19173,11 @@ body.layout-mode-rtl .card .z-n1 img {
 
 .accordion.accordion-solid-danger .accordion-button.collapsed {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-solid-danger .accordion-button.collapsed:after {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-solid-warning .accordion-button {
@@ -19198,11 +19198,11 @@ body.layout-mode-rtl .card .z-n1 img {
 
 .accordion.accordion-solid-warning .accordion-button.collapsed {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-solid-warning .accordion-button.collapsed:after {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-solid-info .accordion-button {
@@ -19223,11 +19223,11 @@ body.layout-mode-rtl .card .z-n1 img {
 
 .accordion.accordion-solid-info .accordion-button.collapsed {
   background-color: #fff;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-solid-info .accordion-button.collapsed:after {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .accordion.accordion-border-primary .accordion-item {
@@ -19857,7 +19857,7 @@ body.layout-mode-rtl .card .z-n1 img {
 }
 
 .breadcrumb .breadcrumb-item {
-  color: #6C7688;
+  color: #000000DE;
   font-weight: 500;
 }
 
@@ -22577,7 +22577,7 @@ th {
 }
 
 .chat-wrapper .chat-users-wrap .chat-list .chat-dropdown>a {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .chat-wrapper .chat-users-wrap .chat-list .chat-dropdown:hover .chat-pin {
@@ -22609,7 +22609,7 @@ th {
   border-radius: 8px;
   position: relative;
   transition: all 0.5s ease;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -22741,7 +22741,7 @@ th {
 .chat-wrapper .search-wrap .input-group-text {
   border-color: var(--pr-border-color);
   background-color: var(--pr-light);
-  color: #6C7688;
+  color: #000000DE;
   border-left: 0;
 }
 
@@ -22800,7 +22800,7 @@ th {
 
 .chat-wrapper .chat-status {
   display: block;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .chat-wrapper .chat-status .avatar {
@@ -22908,7 +22908,7 @@ th {
   height: 4px;
   border-radius: 50%;
   margin-right: -1px;
-  background: #6C7688;
+  background: #000000DE;
   -webkit-animation: wave 1.3s linear infinite;
   animation: wave 1.3s linear infinite;
   opacity: 0.6;
@@ -23079,7 +23079,7 @@ th {
 
 .chat-wrapper .chat .chat-header .chat-options>ul>li>a {
   font-size: 14px;
-  color: #6C7688;
+  color: #000000DE;
   cursor: pointer;
   width: 32px;
   height: 32px;
@@ -23142,7 +23142,7 @@ th {
 
 .chat-wrapper .chat .chat-body .messages .chat-profile-name h6 .chat-time,
 .chat-wrapper .chat .chat-body .messages .chat-profile-name .h6 .chat-time {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .chat-wrapper .chat .chat-body .messages .chat-profile-name h6 i,
@@ -23162,7 +23162,7 @@ th {
 
 .chat-wrapper .chat .chat-body .messages .chat-profile-name h6 .msg-read i,
 .chat-wrapper .chat .chat-body .messages .chat-profile-name .h6 .msg-read i {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .chat-wrapper .chat .chat-body .messages .chat-profile-name h6 .msg-read.success i,
@@ -23280,7 +23280,7 @@ th {
   -webkit-justify-content: center;
   border-radius: 9px;
   background: #fff;
-  color: #6C7688;
+  color: #000000DE;
   margin-left: 40px;
   flex-shrink: 0;
 }
@@ -23308,7 +23308,7 @@ th {
   -ms-flex-align: center;
   align-items: center;
   padding: 8px;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .chat-wrapper .chat .chat-body .messages .chats.chats-right {
@@ -23420,7 +23420,7 @@ th {
 
 .chat-wrapper .chats .chat-profile-name h6 .chat-time,
 .chat-wrapper .chats .chat-profile-name .h6 .chat-time {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .chat-wrapper .chats .chat-profile-name h6 i,
@@ -23440,7 +23440,7 @@ th {
 
 .chat-wrapper .chats .chat-profile-name h6 .msg-read i,
 .chat-wrapper .chats .chat-profile-name .h6 .msg-read i {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .chat-wrapper .chats .chat-profile-name h6 .msg-read.success i,
@@ -23506,7 +23506,7 @@ th {
   -webkit-justify-content: center;
   border-radius: 9px;
   background: #fff;
-  color: #6C7688;
+  color: #000000DE;
   margin-left: 40px;
 }
 
@@ -23600,7 +23600,7 @@ th {
   justify-content: center;
   -webkit-justify-content: center;
   -ms-flex-pack: center;
-  color: #6C7688;
+  color: #000000DE;
   font-size: 16px;
 }
 
@@ -23884,7 +23884,7 @@ th {
 }
 
 .chat-wrapper .chat .chat-footer .footer-form .chat-footer-wrap .form-wrap .form-control::placeholder {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .chat-wrapper .chat .chat-footer .footer-form .chat-footer-wrap .form-wrap .chats {
@@ -23912,7 +23912,7 @@ th {
   width: 32px;
   height: 32px;
   border-radius: 8px;
-  color: #6C7688;
+  color: #000000DE;
   display: -webkit-box;
   display: -ms-flexbox;
   display: flex;
@@ -23975,7 +23975,7 @@ th {
 }
 
 .chat-wrapper .link-icon {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .chat-wrapper .link-icon:hover {
@@ -24005,7 +24005,7 @@ th {
   border-radius: 50%;
   background: var(--pr-light);
   border: 1px solid var(--pr-border-color);
-  color: #6C7688;
+  color: #000000DE;
   display: flex;
   display: -webkit-flex;
   align-items: center;
@@ -24150,7 +24150,7 @@ th {
   width: 24px;
   height: 24px;
   background: #fff;
-  color: #6C7688;
+  color: #000000DE;
   border-radius: 50%;
   display: -webkit-box;
   display: -ms-flexbox;
@@ -24198,7 +24198,7 @@ th {
 }
 
 .more-icon a {
-  color: #6C7688;
+  color: #000000DE;
   width: 30px;
   height: 30px;
   background: #fff;
@@ -24564,7 +24564,7 @@ th {
   -webkit-justify-content: left;
   -ms-flex-pack: left;
   font-size: 10px;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .chat-msg-blk .chats .chat-profile-name h6 i,
@@ -24767,7 +24767,7 @@ th {
 }
 
 .right-user-side .slime-grp .chat-footer form .comman-icon a {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .right-user-side .slime-grp .chat-footer form .smile-col {
@@ -27587,13 +27587,13 @@ span.flatpickr-weekday,
 
 .select2-container--default .select2-selection--multiple .select2-selection__choice {
   background: #F5F6F8 !important;
-  color: #6C7688 !important;
+  color: #000000DE !important;
   border-color: #CED1D7 !important;
 }
 
 .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
   background: #F5F6F8 !important;
-  color: #6C7688 !important;
+  color: #000000DE !important;
   border-color: #F5F6F8 !important;
 }
 
@@ -28388,7 +28388,7 @@ table.dataTable>thead .sorting_desc_disabled:after {
   content: "\f175" !important;
   font-family: "Font Awesome 5 Free";
   bottom: 12px !important;
-  color: #6C7688 !important;
+  color: #000000DE !important;
   font-size: 10px !important;
   opacity: 1 !important;
   position: absolute;
@@ -28406,7 +28406,7 @@ table.dataTable>thead .sorting_desc_disabled:before {
   content: "\f176" !important;
   font-family: "Font Awesome 5 Free";
   top: 50% !important;
-  color: #6C7688 !important;
+  color: #000000DE !important;
   font-size: 10px !important;
   opacity: 1 !important;
   position: absolute;
@@ -28421,7 +28421,7 @@ table.dataTable>thead .sorting_desc_disabled:before {
 
 .dataTables_info {
   font-size: 14px;
-  color: #6C7688;
+  color: #000000DE;
   font-weight: 500;
 }
 
@@ -28565,7 +28565,7 @@ table.dataTable>thead .sorting_desc_disabled:before {
   -webkit-box-align: center;
   -ms-flex-align: center;
   align-items: center;
-  color: #6C7688;
+  color: #000000DE;
   font-size: 13px;
 }
 
@@ -28628,7 +28628,7 @@ table.table.dataTable>tbody>tr {
 }
 
 table.table.dataTable>tbody>tr td {
-  color: #6C7688;
+  color: #000000DE;
   border-bottom: 1px solid var(--pr-border-color);
   padding: 12px 24px 12px 16px;
 }
@@ -28817,7 +28817,7 @@ table.table.dataTable>thead>tr th {
   -ms-transform: translateY(-50%);
   left: 12px;
   border: 0;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 table td a {
@@ -29604,7 +29604,7 @@ a.link-hover:hover {
 }
 
 .filter-dropdown .yearpicker {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .dropdown-lg {
@@ -30090,7 +30090,7 @@ ul li {
 .auth-bg .login-or {
   text-align: center;
   font-size: 15px;
-  color: #6C7688;
+  color: #000000DE;
   font-weight: 500;
   margin: 5px 0;
   padding: 10px 0 0px;
@@ -30444,7 +30444,7 @@ ol .handle {
 /* Start::Vector Maps */
 .jvm-zoom-btn {
   background-color: var(--pr-light);
-  color: #6C7688;
+  color: #000000DE;
   border: 1px solid var(--pr-border-color);
   font-size: 20px;
 }
@@ -30638,7 +30638,7 @@ ol .handle {
   margin: 0;
   font-size: 14px;
   font-weight: 400;
-  color: #6C7688;
+  color: #000000DE;
   height: 38px;
 }
 
@@ -31442,17 +31442,17 @@ img {
 }
 
 .invoice-dark table tr {
-  border-color: #6C7688 !important;
+  border-color: #000000DE !important;
 }
 
 .invoice-dark table tr td {
   background: #0A1B39;
   color: #fff !important;
-  border-color: #6C7688 !important;
+  border-color: #000000DE !important;
 }
 
 .invoice-dark table tr th {
-  border-color: #6C7688 !important;
+  border-color: #000000DE !important;
 }
 
 .invoice-dark .thead-dark th {
@@ -31460,7 +31460,7 @@ img {
 }
 
 .invoice-dark .border-bottom {
-  border-color: #6C7688 !important;
+  border-color: #000000DE !important;
 }
 
 .invoice-design-6 {
@@ -31510,7 +31510,7 @@ img {
   width: 18px;
   background-color: #E5E7EB;
   border-radius: 50%;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .invoice-template .invoice-star i {
@@ -31722,7 +31722,7 @@ img {
 
 .notication-item .notication-content .notify-time {
   margin-bottom: 0;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 @media (max-width: 575.98px) {
@@ -31874,7 +31874,7 @@ img {
 }
 
 .notify-info .select2-container--default .select2-selection--single .select2-selection__rendered {
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .notify-info .select2-container--default .select2-selection--single .select2-selection__arrow b {
@@ -31914,7 +31914,7 @@ img {
 
 .dropdown-menu.dropdown-menu-end.noti-blk .media-body p {
   font-size: 13px;
-  color: #6C7688;
+  color: #000000DE;
 }
 
 .notification-message {

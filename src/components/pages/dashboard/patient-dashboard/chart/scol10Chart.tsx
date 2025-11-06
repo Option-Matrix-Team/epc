@@ -37,7 +37,7 @@ const SCol10Chart: React.FC = () => {
         show: true,
         style: {
           fontSize: "12px",
-          colors: "#6C7688",
+          colors: "#000000DE",
         },
       },
       axisBorder: { show: false },

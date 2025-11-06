@@ -10,7 +10,7 @@ export interface SelectProps {
   options: Option[];
   defaultValue?: Option;
   className?: string;
-  styles?: any; 
+  styles?: any;
 }
 
 const CommonSelect: React.FC<SelectProps> = ({ options, defaultValue, className }) => {
@@ -19,7 +19,7 @@ const CommonSelect: React.FC<SelectProps> = ({ options, defaultValue, className 
   const customStyles = {
     option: (base: any, state: any) => ({
       ...base,
-      color: "#6C7688",
+      color: "#000000DE",
       backgroundColor: state.isSelected ? "#ddd" : "white",
       cursor: "pointer",
       "&:hover": {
@@ -35,7 +35,7 @@ const CommonSelect: React.FC<SelectProps> = ({ options, defaultValue, className 
   useEffect(() => {
     setSelectedOption(defaultValue || undefined);
   }, [defaultValue])
-  
+
   return (
     <Select
       classNamePrefix="react-select"

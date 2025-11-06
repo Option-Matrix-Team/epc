@@ -130,7 +130,7 @@ export const AdminSidebarData = [
                 submenuItems: [],
             },
             {
-                label: "Nursing", // Need a specific route, maybe link to Nurses?
+                label: "Nurse Allocation", // Need a specific route, maybe link to Nurses?
                 link: "#",
                 submenu: false,
                 icon: "home-exclamation", // Example icon
@@ -145,14 +145,7 @@ export const AdminSidebarData = [
                 base: "accommodation",
                 submenuItems: [],
             },
-            {
-                label: "Patients", // Reuse existing route
-                link: "#",
-                submenu: false,
-                icon: "user-heart",
-                base: "patients",
-                submenuItems: [],
-            },
+
             {
                 label: "Billing", // Link to Invoices or Payments?
                 link: "#",
@@ -174,6 +167,15 @@ export const AdminSidebarData = [
                 link: routes.chat,
                 submenu: false,
                 icon: "message-dots",
+                base: "chat",
+                submenuItems: [],
+            },
+            ,
+            {
+                label: "Settings", // Reuse existing chat route
+                link: routes.chat,
+                submenu: false,
+                icon: "user-cog",
                 base: "chat",
                 submenuItems: [],
             },
@@ -281,25 +283,7 @@ export const AdminSidebarData = [
                 submenuItems: [],
             },
         ],
-    },
-    {
-        tittle: "Settings", // Reuse existing Settings section structure if applicable
-        icon: "airplay",
-        showAsTab: true,
-        separateRoute: false,
-        submenuItems: [
-            {
-                label: "Settings",
-                link: "#",
-                submenu: false,
-                showSubRoute: false,
-                icon: "user-cog",
-                base: "account-settings",
-
-            },
-
-        ],
-    },
+    }
 ];
 
 // IMPORTANT: Replace the old SidebarData export with this one

@@ -7,7 +7,6 @@ import "../../src/style/css/iconsax.css";
 import "../../src/style/scss/index.scss";
 import "../../src/style/css/feather.css";
 import Providers from "./Providers";
-import "./globals.css";
 
 export const metadata = {
   title: "  EMR | Medical & Hospital - Bootstrap 5 Admin Template",

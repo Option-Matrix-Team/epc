@@ -15,8 +15,8 @@ export async function GET(req: Request) {
         if (userType === 'Admin') {
             const { data: admins, error: adminsErr } = await supabase
                 .from('admins')
-                // only non-deleted admins; include role_id and phone_number so client can read it
-                .select('user_id,is_active,is_deleted,role_id,phone_number')
+                // only non-deleted admins; include role_id, phone_number and address/location fields so client can read it
+                .select('user_id,is_active,is_deleted,role_id,phone_number,address,zip,state_id,city_id')
                 .eq('is_deleted', false);
 
             if (adminsErr) throw adminsErr;
@@ -39,7 +39,20 @@ export async function GET(req: Request) {
                     }
 
                     if (authUser) {
-                        users.push({ ...authUser, profile, admin: { is_active: a.is_active, is_deleted: a.is_deleted, role_id: a.role_id, phone_number: (a as any).phone_number ?? null } });
+                        users.push({
+                            ...authUser,
+                            profile,
+                            admin: {
+                                is_active: a.is_active,
+                                is_deleted: a.is_deleted,
+                                role_id: a.role_id,
+                                phone_number: (a as any).phone_number ?? null,
+                                address: (a as any).address ?? null,
+                                zip: (a as any).zip ?? null,
+                                state_id: (a as any).state_id ?? null,
+                                city_id: (a as any).city_id ?? null,
+                            }
+                        });
                     }
                 } catch (e) {
                     console.warn('Failed to fetch auth user for admin', userId, e);
@@ -70,6 +83,11 @@ export async function POST(req: Request) {
         const body = await req.json();
         const { email, password, name, role, userType } = body;
         const phone_number = body?.phone_number ?? body?.phoneNumber ?? null;
+        // Address/location fields (best-effort, optional)
+        const address = body?.address ?? null;
+        const zip = body?.zip ?? null;
+        const state_id = body?.state_id ?? null;
+        const city_id = body?.city_id ?? null;
         const supabase = getSupabaseAdmin();
 
         if (!email) {
@@ -104,6 +122,10 @@ export async function POST(req: Request) {
                     const upsertPayload: any = { user_id: userId };
                     if (roleId !== undefined && roleId !== null && String(roleId).length) upsertPayload.role_id = roleId;
                     if (phone_number !== undefined && phone_number !== null && String(phone_number).length) upsertPayload.phone_number = String(phone_number);
+                    if (typeof address !== 'undefined') upsertPayload.address = address ?? null;
+                    if (typeof zip !== 'undefined') upsertPayload.zip = zip ?? null;
+                    if (typeof state_id !== 'undefined') upsertPayload.state_id = state_id ?? null;
+                    if (typeof city_id !== 'undefined') upsertPayload.city_id = city_id ?? null;
                     const upsertAdmin: any = await supabase.from('admins').upsert([upsertPayload], { onConflict: 'user_id' });
                     if (upsertAdmin?.error) {
                         console.warn('Failed to upsert into admins table:', upsertAdmin.error);
@@ -195,6 +217,10 @@ export async function PATCH(req: Request) {
         const body = await req.json();
         const { action, userId, isActive, name, email, role } = body || {};
         const phone_number = (body as any)?.phone_number ?? (body as any)?.phoneNumber ?? undefined;
+        const address = (body as any)?.address;
+        const zip = (body as any)?.zip;
+        const state_id = (body as any)?.state_id;
+        const city_id = (body as any)?.city_id;
 
         if (!action || !userId) {
             return NextResponse.json({ error: 'action and userId are required' }, { status: 400 });
@@ -240,27 +266,22 @@ export async function PATCH(req: Request) {
                         // Profile doesn't exist — skip creating it here to avoid inserting rows with null required columns.
                     }
                 } catch (e) { /* ignore */ }
-                // If a role_id was provided, persist it to the admins table
-                try {
-                    const incomingRoleId = (body as any)?.role_id ?? (body as any)?.roleId ?? null;
-                    if (incomingRoleId !== undefined) {
-                        // update admins row for this user (best-effort)
-                        try {
-                            const { data, error } = await supabase.from('admins').update({ role_id: incomingRoleId }).eq('user_id', userId);
-                            if (error) console.warn('Failed to update admins.role_id', error);
-                        } catch (uerr) {
-                            console.warn('Error updating admins.role_id', uerr);
-                        }
-                    }
-                } catch (err) { /* ignore */ }
 
-                // If phone_number provided, update admins table
+                // Update admins row with role_id, phone_number, and address/location fields (best-effort)
                 try {
-                    if (phone_number !== undefined) {
-                        const { error: phoneErr } = await supabase.from('admins').update({ phone_number: phone_number }).eq('user_id', userId);
-                        if (phoneErr) console.warn('Failed to update admins.phone_number', phoneErr);
+                    const incomingRoleId = (body as any)?.role_id ?? (body as any)?.roleId ?? undefined;
+                    const updateAdmin: any = {};
+                    if (incomingRoleId !== undefined) updateAdmin.role_id = incomingRoleId;
+                    if (phone_number !== undefined) updateAdmin.phone_number = phone_number;
+                    if (typeof address !== 'undefined') updateAdmin.address = address ?? null;
+                    if (typeof zip !== 'undefined') updateAdmin.zip = zip ?? null;
+                    if (typeof state_id !== 'undefined') updateAdmin.state_id = state_id ?? null;
+                    if (typeof city_id !== 'undefined') updateAdmin.city_id = city_id ?? null;
+                    if (Object.keys(updateAdmin).length > 0) {
+                        const { error: updErr } = await supabase.from('admins').update(updateAdmin).eq('user_id', userId);
+                        if (updErr) console.warn('Failed to update admins row', updErr);
                     }
-                } catch (perr) { /* ignore */ }
+                } catch (uerr) { /* ignore */ }
 
                 return NextResponse.json({ ok: true });
             } catch (e: any) {

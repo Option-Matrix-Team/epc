@@ -15,7 +15,7 @@ export async function GET(req: Request) {
         if (userType === 'Patient') {
             const { data: patients, error: patientsErr } = await supabase
                 .from('patients')
-                .select('user_id,is_active,is_deleted,date_of_birth,address,zip,state_id,city_id')
+                .select('user_id,is_active,is_deleted,date_of_birth,address,zip,state_id,city_id,phone_number')
                 .eq('is_deleted', false);
 
             if (patientsErr) throw patientsErr;
@@ -47,6 +47,7 @@ export async function GET(req: Request) {
                                 zip: p.zip ?? null,
                                 state_id: p.state_id ?? null,
                                 city_id: p.city_id ?? null,
+                                phone_number: p.phone_number ?? null,
                             }
                         });
                     }
@@ -77,7 +78,7 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json();
-        const { email, password, name, role, userType, date_of_birth, address, zip, state_id, city_id } = body;
+        const { email, password, name, role, userType, date_of_birth, address, zip, state_id, city_id, phone_number } = body;
         const supabase = getSupabaseAdmin();
 
         if (!email) {
@@ -115,6 +116,7 @@ export async function POST(req: Request) {
                     if (typeof zip !== 'undefined') upsertPayload.zip = zip ?? null;
                     if (typeof state_id !== 'undefined') upsertPayload.state_id = state_id ?? null;
                     if (typeof city_id !== 'undefined') upsertPayload.city_id = city_id ?? null;
+                    if (typeof phone_number !== 'undefined') upsertPayload.phone_number = phone_number ?? null;
                     const upsertPatient: any = await supabase.from('patients').upsert([
                         upsertPayload
                     ], { onConflict: 'user_id' });
@@ -181,7 +183,7 @@ export async function PATCH(req: Request) {
     try {
         const supabase = getSupabaseAdmin();
         const body = await req.json();
-        const { action, patientId, isActive, name, email, role, password, date_of_birth, address, zip, state_id, city_id } = body || {};
+        const { action, patientId, isActive, name, email, role, password, date_of_birth, address, zip, state_id, city_id, phone_number } = body || {};
 
         if (!action || !patientId) {
             return NextResponse.json({ error: 'action and patientId are required' }, { status: 400 });
@@ -226,6 +228,7 @@ export async function PATCH(req: Request) {
                     if (typeof zip !== 'undefined') upsertPayload.zip = zip ?? null;
                     if (typeof state_id !== 'undefined') upsertPayload.state_id = state_id ?? null;
                     if (typeof city_id !== 'undefined') upsertPayload.city_id = city_id ?? null;
+                    if (typeof phone_number !== 'undefined') upsertPayload.phone_number = phone_number ?? null;
                     // Only call upsert if there's something to persist beyond user_id
                     if (Object.keys(upsertPayload).length > 1) {
                         const upsertRes: any = await supabase.from('patients').upsert([upsertPayload], { onConflict: 'user_id' });

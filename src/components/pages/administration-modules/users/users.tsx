@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react"; // 1. Import useMemo
+import { useEffect, useState, useMemo, useRef } from "react";
 import Datatable from "@/core/common/dataTable";
 import { all_routes } from "@/routes/all_routes";
 import Link from "next/link";
@@ -9,6 +9,80 @@ import { StatusActive } from "@/core/common/selectOption";
 import ImageWithBasePath from "@/core/imageWithBasePath";
 import SearchInput from "@/core/common/dataTable/dataTableSearch";
 import getSupabaseClient from "@/lib/supabaseClient";
+import { formatDateTime } from '@/core/common/dateTime';
+import "@/style/css/admin-screens.css";
+
+// Lightweight searchable select (no external deps)
+type SSOption = { value: string | number; label: string };
+const SearchSelect: React.FC<{
+    options: SSOption[];
+    value: string | number | null | undefined;
+    onChange: (val: string | number | null) => void;
+    placeholder?: string;
+    disabled?: boolean;
+    allowClear?: boolean;
+    inputClassName?: string;
+}> = ({ options, value, onChange, placeholder = 'Select...', disabled, allowClear = true, inputClassName }) => {
+    const [open, setOpen] = useState(false);
+    const [query, setQuery] = useState('');
+    const wrapRef = useRef<HTMLDivElement | null>(null);
+
+    const selected = useMemo(() => options.find(o => String(o.value) === String(value)) || null, [options, value]);
+    const filtered = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        if (!q) return options;
+        return options.filter(o => o.label.toLowerCase().includes(q));
+    }, [options, query]);
+
+    useEffect(() => {
+        const onDoc = (e: MouseEvent) => {
+            if (!wrapRef.current) return;
+            if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
+        };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, []);
+
+    const displayText = open ? query : (selected?.label ?? '');
+
+    return (
+        <div className="position-relative" ref={wrapRef}>
+            <div className="d-flex align-items-center">
+                <input
+                    className={`form-control ${inputClassName || ''}`}
+                    value={displayText}
+                    onChange={e => { setQuery(e.target.value); if (!open) setOpen(true); }}
+                    onFocus={() => setOpen(true)}
+                    placeholder={placeholder}
+                    disabled={disabled}
+                />
+                {allowClear && (value !== null && value !== undefined && String(value) !== '') && (
+                    <button type="button" className="btn btn-link text-muted ms-1 p-0 px-1" onClick={() => { onChange(null); setQuery(''); }} aria-label="Clear">
+                        <i className="ti ti-x" />
+                    </button>
+                )}
+            </div>
+            {open && (
+                <div className="dropdown-menu show w-100" style={{ maxHeight: 240, overflowY: 'auto' }}>
+                    {filtered.length === 0 ? (
+                        <span className="dropdown-item text-muted">No results</span>
+                    ) : (
+                        filtered.map(opt => (
+                            <button
+                                key={String(opt.value)}
+                                type="button"
+                                className={`dropdown-item ${String(opt.value) === String(value) ? 'active' : ''}`}
+                                onClick={() => { onChange(opt.value); setOpen(false); setQuery(''); }}
+                            >
+                                {opt.label}
+                            </button>
+                        ))
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 const UsersComponent = () => {
     const [data, setData] = useState<any[]>([]);
@@ -25,6 +99,16 @@ const UsersComponent = () => {
     const [editRole, setEditRole] = useState("");
     const [phoneNumber, setPhoneNumber] = useState("");
     const [editPhoneNumber, setEditPhoneNumber] = useState("");
+    const [states, setStates] = useState<any[]>([]);
+    const [cities, setCities] = useState<any[]>([]);
+    const [addAddress, setAddAddress] = useState("");
+    const [addZip, setAddZip] = useState("");
+    const [addStateId, setAddStateId] = useState<number | null>(null);
+    const [addCityId, setAddCityId] = useState<number | null>(null);
+    const [editAddress, setEditAddress] = useState("");
+    const [editZip, setEditZip] = useState("");
+    const [editStateId, setEditStateId] = useState<number | null>(null);
+    const [editCityId, setEditCityId] = useState<number | null>(null);
     const [resetUserId, setResetUserId] = useState<string | null>(null);
     const [resetPassword, setResetPassword] = useState("");
     const [resetConfirm, setResetConfirm] = useState("");
@@ -42,10 +126,10 @@ const UsersComponent = () => {
     const [isSavingCols, setIsSavingCols] = useState(false);
 
     // Filters UI state
-    type Filters = { phone: string; roleId: string; status: '' | 'active' | 'inactive' };
+    type Filters = { phone: string; roleId: string; address: string; zip: string; stateId: string; cityId: string; status: '' | 'active' | 'inactive' };
     const [showFilters, setShowFilters] = useState(false);
-    const [filtersDraft, setFiltersDraft] = useState<Filters>({ phone: '', roleId: '', status: '' });
-    const [appliedFilters, setAppliedFilters] = useState<Filters>({ phone: '', roleId: '', status: '' });
+    const [filtersDraft, setFiltersDraft] = useState<Filters>({ phone: '', roleId: '', address: '', zip: '', stateId: '', cityId: '', status: '' });
+    const [appliedFilters, setAppliedFilters] = useState<Filters>({ phone: '', roleId: '', address: '', zip: '', stateId: '', cityId: '', status: '' });
 
     // Saved Searches state
     type SavedSearch = { id: string; name: string; filters: Filters };
@@ -54,6 +138,18 @@ const UsersComponent = () => {
     const [showSaveSearchModal, setShowSaveSearchModal] = useState(false);
     const [saveSearchName, setSaveSearchName] = useState('');
     const [isSavingSearch, setIsSavingSearch] = useState(false);
+
+    // Options for searchable selects
+    const stateOptions = useMemo(() => (states || []).map(s => ({ value: String(s.id), label: s.name })), [states]);
+    const cityOptionsFilter = useMemo(() => (cities || [])
+        .filter(c => !filtersDraft.stateId || String(c.state_id) === String(filtersDraft.stateId))
+        .map(c => ({ value: String(c.id), label: c.name })), [cities, filtersDraft.stateId]);
+    const cityOptionsAdd = useMemo(() => (cities || [])
+        .filter(c => !addStateId || String(c.state_id) === String(addStateId))
+        .map(c => ({ value: String(c.id), label: c.name })), [cities, addStateId]);
+    const cityOptionsEdit = useMemo(() => (cities || [])
+        .filter(c => !editStateId || String(c.state_id) === String(editStateId))
+        .map(c => ({ value: String(c.id), label: c.name })), [cities, editStateId]);
 
     // Close any open dropdown menus before opening a dialog to avoid stacking/focus issues
     const closeOpenDropdowns = () => {
@@ -79,13 +175,23 @@ const UsersComponent = () => {
     // CSV helper functions
     const downloadCSV = () => {
         try {
-            const headers = ['Name', 'Email', 'Phone Number', 'Role'];
-            const rows = processedData.map(record => [
-                record.name_flat || '',
-                record.email_flat || '',
-                record?.admin?.phone_number || '',
-                record.role_flat || ''
-            ]);
+            const headers = ['Name', 'Email', 'Phone', 'Role', 'Address', 'Zip', 'State', 'City'];
+            const rows = processedData.map(record => {
+                const sid = record?.admin?.state_id ?? null;
+                const cid = record?.admin?.city_id ?? null;
+                const st = states.find(s => String(s.id) === String(sid));
+                const ct = cities.find(c => String(c.id) === String(cid));
+                return [
+                    record.name_flat || '',
+                    record.email_flat || '',
+                    record?.admin?.phone_number || '',
+                    record.role_flat || '',
+                    record?.admin?.address || '',
+                    record?.admin?.zip || '',
+                    st?.name || '',
+                    ct?.name || ''
+                ];
+            });
             const csvContent = [headers, ...rows].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
@@ -101,8 +207,8 @@ const UsersComponent = () => {
 
     const downloadTemplate = () => {
         try {
-            const headers = ['Name', 'Email', 'Phone Number', 'Role'];
-            const sampleRow = ['John Doe', 'john@example.com', '+1234567890', 'Admin'];
+            const headers = ['Name', 'Email', 'Phone', 'Role', 'Address', 'Zip', 'State', 'City'];
+            const sampleRow = ['John Doe', 'john@example.com', '+1234567890', 'Admin', '123 Main St', '12345', 'Texas', 'Houston'];
             const csvContent = [headers, sampleRow].map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
@@ -134,7 +240,7 @@ const UsersComponent = () => {
 
             for (const row of rows) {
                 const values = row.split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-                const [name, email, phone, roleName] = values;
+                const [name, email, phone, roleName, address, zip, stateName, cityName] = values;
 
                 if (!name || !email || !roleName) {
                     errorCount++;
@@ -145,6 +251,12 @@ const UsersComponent = () => {
                     const roleEntry = Object.entries(rolesMap).find(([_, rName]) => rName.toLowerCase() === roleName.toLowerCase());
                     const role_id = roleEntry ? roleEntry[0] : null;
 
+                    // Find state and city IDs by name
+                    const state = states.find(s => s.name.toLowerCase() === stateName?.toLowerCase());
+                    const state_id = state ? state.id : null;
+                    const city = cities.find(c => c.name.toLowerCase() === cityName?.toLowerCase() && (!state_id || c.state_id === state_id));
+                    const city_id = city ? city.id : null;
+
                     const headers: any = { 'Content-Type': 'application/json' };
                     const adminSecret = (typeof process !== 'undefined' && (process as any).env?.NEXT_PUBLIC_ADMIN_API_SECRET) ? (process as any).env.NEXT_PUBLIC_ADMIN_API_SECRET : undefined;
                     if (adminSecret) headers['x-admin-secret'] = adminSecret;
@@ -152,7 +264,18 @@ const UsersComponent = () => {
                     const res = await fetch('/api/users', {
                         method: 'POST',
                         headers,
-                        body: JSON.stringify({ email, name, role: roleName, role_id, userType: 'Admin', phone_number: phone || null })
+                        body: JSON.stringify({
+                            email,
+                            name,
+                            role: roleName,
+                            role_id,
+                            userType: 'Admin',
+                            phone_number: phone || null,
+                            address: address || null,
+                            zip: zip || null,
+                            state_id,
+                            city_id
+                        })
                     });
                     const json = await res.json();
                     if (json.error) throw new Error(json.error);
@@ -327,7 +450,19 @@ const UsersComponent = () => {
         }
     };
 
-    useEffect(() => { fetchUsers(); }, []);
+    const fetchStatesAndCities = async () => {
+        try {
+            const [sRes, cRes] = await Promise.all([fetch('/api/states'), fetch('/api/cities')]);
+            const sJson = await sRes.json().catch(() => ({}));
+            const cJson = await cRes.json().catch(() => ({}));
+            setStates(sJson.states || []);
+            setCities(cJson.cities || []);
+        } catch (e) {
+            console.debug('[users] failed to load states/cities', e);
+        }
+    };
+
+    useEffect(() => { fetchUsers(); fetchStatesAndCities(); }, []);
     useEffect(() => { fetchRoleOptions('Admin'); }, []);
 
     // 2. Create processedData to flatten properties for filtering
@@ -337,17 +472,32 @@ const UsersComponent = () => {
             const roleName = (roleId && rolesMap[String(roleId)]) ? rolesMap[String(roleId)] : (record.profile?.user_type ?? record?.user_metadata?.role ?? 'User');
 
             return {
-                ...record, // Keep the original record for render functions that need it
-                // Add flattened, searchable properties
+                ...record,
                 name_flat: record.user_metadata?.name ?? record.email,
                 email_flat: record.email,
                 role_flat: roleName,
                 role_id_flat: roleId ?? null,
                 phone_flat: record?.admin?.phone_number ?? '',
+                state_id_flat: record?.admin?.state_id ?? null,
+                city_id_flat: record?.admin?.city_id ?? null,
+                state_name_flat: (() => {
+                    const sid = record?.admin?.state_id ?? null;
+                    const st = states.find(s => String(s.id) === String(sid));
+                    return st ? st.name : (record?.admin?.state_name ?? '');
+                })(),
+                city_name_flat: (() => {
+                    const cid = record?.admin?.city_id ?? null;
+                    const ct = cities.find(c => String(c.id) === String(cid));
+                    return ct ? ct.name : (record?.admin?.city_name ?? '');
+                })(),
+                zip_flat: record?.admin?.zip ?? '',
+                address_flat: record?.admin?.address ?? '',
                 is_active_flat: !!(record?.admin?.is_active),
+                created_at_flat: record?.admin?.created_at ?? record?.created_at ?? record?.user?.created_at ?? '',
+                updated_at_flat: record?.admin?.updated_at ?? record?.updated_at ?? record?.user?.updated_at ?? '',
             };
         });
-    }, [data, rolesMap]);
+    }, [data, rolesMap, states, cities]);
 
     // Apply advanced filters when "Go" is clicked
     const filteredData = useMemo(() => {
@@ -363,6 +513,16 @@ const UsersComponent = () => {
                 return String(rid) === String(f.roleId);
             });
         }
+        if (f.address.trim()) {
+            const q = f.address.trim().toLowerCase();
+            rows = rows.filter((r: any) => (r?.address_flat || '').toString().toLowerCase().includes(q));
+        }
+        if (f.zip.trim()) {
+            const q = f.zip.trim().toLowerCase();
+            rows = rows.filter((r: any) => (r?.zip_flat || '').toString().toLowerCase().includes(q));
+        }
+        if (f.stateId) rows = rows.filter((r: any) => String(r?.state_id_flat ?? '') === String(f.stateId));
+        if (f.cityId) rows = rows.filter((r: any) => String(r?.city_id_flat ?? '') === String(f.cityId));
         if (f.status) {
             rows = rows.filter((r: any) => {
                 const active = !!(r?.is_active_flat ?? r?.admin?.is_active);
@@ -372,27 +532,30 @@ const UsersComponent = () => {
         return rows;
     }, [processedData, appliedFilters]);
 
-    // 3. Update columns to use the flat dataIndex
+    // 3. Update columns to use the flat dataIndex - matching nurses.tsx structure
     const columns = [
-        { title: 'Name', dataIndex: 'name_flat', sorter: (a: any, b: any) => (a.name_flat || '').localeCompare(b.name_flat || '') },
-        { title: 'Email', dataIndex: 'email_flat', sorter: (a: any, b: any) => (a.email_flat || '').localeCompare(b.email_flat || '') },
-
-        { title: 'Phone', dataIndex: 'admin.phone_number', sorter: (a: any, b: any) => (a?.admin?.phone_number || '').localeCompare(b?.admin?.phone_number || ''), render: (_: any, record: any) => record?.admin?.phone_number ?? '' },
-        { title: 'Role', dataIndex: 'role_flat', sorter: (a: any, b: any) => (a.role_flat || '').localeCompare(b.role_flat || '') },
-
         {
-            title: 'Reset Password', render: (v: any, r: any) => {
+            title: 'Actions', render: (v: any, r: any) => {
                 const userId = r?.id ?? r?.user?.id ?? r?.user?.user?.id;
+                const isLoading = !!(userId && loadingIds[userId]);
+                if (isLoading) {
+                    return <div><span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>;
+                }
                 return (
-                    <div>
-                        <a href="#" className="text-primary" onClick={(e) => { e.preventDefault(); handleResetOpen(r); }} title="Reset Password"><i className="ti ti-key" /></a>
+                    <div className="dropdown position-static">
+                        <a href="#" className="text-dark" data-bs-toggle="dropdown" data-bs-boundary="viewport" onClick={(e) => e.preventDefault()}>
+                            <i className="ti ti-dots-vertical" />
+                        </a>
+                        <ul className="dropdown-menu p-2">
+                            <li><a href="#" className="dropdown-item" onClick={(e) => { e.preventDefault(); handleEditOpen(r); }}>Edit</a></li>
+                            <li><a href="#" className="dropdown-item text-danger" onClick={async (e) => { e.preventDefault(); await handleSoftDelete(r); }}>Delete</a></li>
+                        </ul>
                     </div>
                 );
             }
         },
         {
-            title: 'Status', dataIndex: 'admin.is_active', render: (_: any, record: any) => {
-                // The render function still receives the full 'record' object from processedData
+            title: 'Status', dataIndex: 'admin.is_active', sortKey: 'is_active_flat', render: (_: any, record: any) => {
                 const isActive = record?.admin?.is_active ?? false;
                 const userId = record?.id ?? record?.user?.id ?? record?.user?.user?.id;
                 const isLoading = !!(userId && loadingIds[userId]);
@@ -400,7 +563,6 @@ const UsersComponent = () => {
                     <span
                         role="button"
                         tabIndex={0}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggleActive(record); } }}
                         onClick={async (e) => { e.preventDefault(); await handleToggleActive(record); }}
                         className={`badge ${isActive ? 'badge-soft-success' : 'badge-soft-danger'} border ${isActive ? 'border-success' : 'border-danger'} px-2 py-1 fs-13 fw-medium`}
                         style={{ cursor: isLoading ? 'not-allowed' : 'pointer' }}
@@ -411,26 +573,113 @@ const UsersComponent = () => {
                 );
             }
         },
-
         {
-            title: 'Actions', render: (v: any, r: any) => {
+            title: 'Name',
+            dataIndex: 'user_metadata.name',
+            sortKey: 'name_flat',
+            sorter: (a: any, b: any) => (a.user_metadata?.name ?? a.email ?? '').localeCompare(b.user_metadata?.name ?? b.email ?? ''),
+            render: (val: any, record: any) => record.user_metadata?.name ?? record.email
+        },
+        {
+            title: 'Email',
+            dataIndex: 'email',
+            sortKey: 'email_flat',
+            sorter: (a: any, b: any) => (a.email ?? '').localeCompare(b.email ?? '')
+        },
+        {
+            title: 'Phone',
+            dataIndex: 'admin.phone_number',
+            sortKey: 'phone_flat',
+            sorter: (a: any, b: any) => (a?.admin?.phone_number ?? '').localeCompare(b?.admin?.phone_number ?? ''),
+            render: (v: any, r: any) => r?.admin?.phone_number ?? ''
+        },
+        {
+            title: 'State',
+            dataIndex: 'admin.state_id',
+            sortKey: 'state_name_flat',
+            sorter: (a: any, b: any) => {
+                const aSid = a?.admin?.state_id ?? null;
+                const bSid = b?.admin?.state_id ?? null;
+                const aSt = states.find(s => String(s.id) === String(aSid));
+                const bSt = states.find(s => String(s.id) === String(bSid));
+                return (aSt?.name ?? a?.admin?.state_name ?? '').localeCompare(bSt?.name ?? b?.admin?.state_name ?? '');
+            },
+            render: (v: any, r: any) => { const sid = r?.admin?.state_id ?? null; const st = states.find(s => String(s.id) === String(sid)); return st ? st.name : (r?.admin?.state_name ?? ''); }
+        },
+        {
+            title: 'City',
+            dataIndex: 'admin.city_id',
+            sortKey: 'city_name_flat',
+            sorter: (a: any, b: any) => {
+                const aCid = a?.admin?.city_id ?? null;
+                const bCid = b?.admin?.city_id ?? null;
+                const aCt = cities.find(c => String(c.id) === String(aCid));
+                const bCt = cities.find(c => String(c.id) === String(bCid));
+                return (aCt?.name ?? a?.admin?.city_name ?? '').localeCompare(bCt?.name ?? b?.admin?.city_name ?? '');
+            },
+            render: (v: any, r: any) => { const cid = r?.admin?.city_id ?? null; const ct = cities.find(c => String(c.id) === String(cid)); return ct ? ct.name : (r?.admin?.city_name ?? ''); }
+        },
+        {
+            title: 'Zip',
+            dataIndex: 'admin.zip',
+            sortKey: 'zip_flat',
+            sorter: (a: any, b: any) => (a?.admin?.zip ?? '').localeCompare(b?.admin?.zip ?? ''),
+            render: (v: any, r: any) => r?.admin?.zip ?? ''
+        },
+        {
+            title: 'Address',
+            dataIndex: 'admin.address',
+            sortKey: 'address_flat',
+            sorter: (a: any, b: any) => (a?.admin?.address ?? '').localeCompare(b?.admin?.address ?? ''),
+            render: (v: any, r: any) => r?.admin?.address ?? ''
+        },
+        {
+            title: 'Role',
+            dataIndex: 'user_metadata.role',
+            sortKey: 'role_flat',
+            sorter: (a: any, b: any) => {
+                const aRoleId = a?.admin?.role_id ?? a?.profile?.role_id ?? a?.user_metadata?.role_id ?? a?.role_id;
+                const bRoleId = b?.admin?.role_id ?? b?.profile?.role_id ?? b?.user_metadata?.role_id ?? b?.role_id;
+                const aRole = (aRoleId && rolesMap[String(aRoleId)]) ? rolesMap[String(aRoleId)] : (a.profile?.user_type ?? a?.user_metadata?.role ?? 'User');
+                const bRole = (bRoleId && rolesMap[String(bRoleId)]) ? rolesMap[String(bRoleId)] : (b.profile?.user_type ?? b?.user_metadata?.role ?? 'User');
+                return aRole.localeCompare(bRole);
+            },
+            render: (val: any, record: any) => {
+                const roleId = record?.admin?.role_id ?? record?.profile?.role_id ?? record?.user_metadata?.role_id ?? record?.role_id;
+                if (roleId && rolesMap[String(roleId)]) return rolesMap[String(roleId)];
+                return record.profile?.user_type ?? val ?? 'User';
+            }
+        },
+        {
+            title: 'Reset Password', render: (v: any, r: any) => {
                 const userId = r?.id ?? r?.user?.id ?? r?.user?.user?.id;
-                const isLoading = !!(userId && loadingIds[userId]);
-                if (isLoading) {
-                    return <div><span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>;
-                }
                 return (
-                    <div className="action-item">
-                        <a href="#" onClick={(e) => e.preventDefault()} data-bs-toggle="dropdown"><i className="ti ti-dots-vertical" /></a>
-                        <ul className="dropdown-menu p-2">
-                            <li><a href="#" className="dropdown-item" onClick={(e) => { e.preventDefault(); handleEditOpen(r); }}>Edit</a></li>
-                            <li><a href="#" className="dropdown-item text-danger" onClick={async (e) => { e.preventDefault(); await handleSoftDelete(r); }}>Delete</a></li>
-                        </ul>
-                    </div>
+                    <a href="#" className="text-primary" onClick={(e) => { e.preventDefault(); handleResetOpen(r); }} title="Reset Password"><i className="ti ti-key" /></a>
                 );
             }
+        },
+        {
+            title: 'Date Created',
+            dataIndex: 'created_at',
+            sortKey: 'created_at_flat',
+            sorter: (a: any, b: any) => {
+                const aDate = a?.admin?.created_at ?? a?.created_at ?? a?.user?.created_at ?? '';
+                const bDate = b?.admin?.created_at ?? b?.created_at ?? b?.user?.created_at ?? '';
+                return aDate.localeCompare(bDate);
+            },
+            render: (v: any, r: any) => formatDateTime(r?.created_at_flat ?? r?.admin?.created_at ?? r?.created_at ?? r?.user?.created_at)
+        },
+        {
+            title: 'Last Updated',
+            dataIndex: 'updated_at',
+            sortKey: 'updated_at_flat',
+            sorter: (a: any, b: any) => {
+                const aDate = a?.admin?.updated_at ?? a?.updated_at ?? a?.user?.updated_at ?? '';
+                const bDate = b?.admin?.updated_at ?? b?.updated_at ?? b?.user?.updated_at ?? '';
+                return aDate.localeCompare(bDate);
+            },
+            render: (v: any, r: any) => formatDateTime(r?.updated_at_flat ?? r?.admin?.updated_at ?? r?.updated_at ?? r?.user?.updated_at)
         }
-
     ];
 
     // Helpers for Grid Columns
@@ -622,12 +871,12 @@ const UsersComponent = () => {
 
     // Derived state for form validation
     const isAddFormValid = useMemo(() => {
-        return !!(name && email && role);
-    }, [name, email, role]);
+        return !!(name && email && role && phoneNumber && addStateId && addCityId && addAddress && addZip);
+    }, [name, email, role, phoneNumber, addStateId, addCityId, addAddress, addZip]);
 
     const isEditFormValid = useMemo(() => {
-        return !!(editingUser && editName && editEmail && editRole);
-    }, [editingUser, editName, editEmail, editRole]);
+        return !!(editingUser && editName && editEmail && editRole && editPhoneNumber && editStateId && editCityId && editAddress && editZip);
+    }, [editingUser, editName, editEmail, editRole, editPhoneNumber, editStateId, editCityId, editAddress, editZip]);
 
     const isResetFormValid = useMemo(() => {
         return !!(resetPassword && resetPassword.length >= 8 && resetPassword === resetConfirm);
@@ -700,13 +949,31 @@ const UsersComponent = () => {
             const res = await fetch('/api/users', {
                 method: 'POST',
                 headers,
-                body: JSON.stringify({ email, name, role: rolesMap[role] || role, role_id: role || null, userType: 'Admin', phone_number: phoneNumber })
+                body: JSON.stringify({
+                    email,
+                    name,
+                    role: rolesMap[role] || role,
+                    role_id: role || null,
+                    userType: 'Admin',
+                    phone_number: phoneNumber,
+                    address: addAddress || null,
+                    zip: addZip || null,
+                    state_id: addStateId,
+                    city_id: addCityId
+                })
             });
             const json = await res.json();
             if (json.error) throw new Error(json.error);
             // After modal is closed, clear the inputs and refresh list
             await hideModalById('add_user');
-            setEmail(''); setName(''); setRole(''); setPhoneNumber('');
+            setEmail('');
+            setName('');
+            setRole('');
+            setPhoneNumber('');
+            setAddAddress('');
+            setAddZip('');
+            setAddStateId(null);
+            setAddCityId(null);
             await fetchUsers();
             // Optionally send magic link to user via client supabase or instruct admin to send
             // Show success feedback and refresh the list
@@ -774,6 +1041,10 @@ const UsersComponent = () => {
         const detectedRoleId = record?.admin?.role_id ?? record?.profile?.role_id ?? record?.user_metadata?.role_id ?? record?.role_id ?? null;
         setEditRole(detectedRoleId ? String(detectedRoleId) : (record?.user_metadata?.role ?? ''));
         setEditPhoneNumber(record?.admin?.phone_number ?? '');
+        setEditAddress(record?.admin?.address ?? '');
+        setEditZip(record?.admin?.zip ?? '');
+        setEditStateId(record?.admin?.state_id ?? null);
+        setEditCityId(record?.admin?.city_id ?? null);
         closeOpenDropdowns();
         showModalById('edit_user');
     };
@@ -795,7 +1066,23 @@ const UsersComponent = () => {
                 : undefined;
             if (adminSecret) headers['x-admin-secret'] = adminSecret;
             setLoadingIds(prev => ({ ...prev, [userId]: true }));
-            const res = await fetch('/api/users', { method: 'PATCH', headers, body: JSON.stringify({ action: 'edit', userId, email: editEmail, name: editName, role: rolesMap[editRole] || editRole, role_id: editRole || null, phone_number: editPhoneNumber }) });
+            const res = await fetch('/api/users', {
+                method: 'PATCH',
+                headers,
+                body: JSON.stringify({
+                    action: 'edit',
+                    userId,
+                    email: editEmail,
+                    name: editName,
+                    role: rolesMap[editRole] || editRole,
+                    role_id: editRole || null,
+                    phone_number: editPhoneNumber,
+                    address: editAddress || null,
+                    zip: editZip || null,
+                    state_id: editStateId,
+                    city_id: editCityId
+                })
+            });
             const json = await res.json();
             if (json.error) throw new Error(json.error);
             await hideModalById('edit_user');
@@ -818,79 +1105,378 @@ const UsersComponent = () => {
         setName('');
         setRole('');
         setPhoneNumber('');
+        setAddAddress('');
+        setAddZip('');
+        setAddStateId(null);
+        setAddCityId(null);
         closeOpenDropdowns();
         showModalById('add_user');
     };
 
+    // Sorting state
+    const [sortConfig, setSortConfig] = useState<{ key: string; direction: "asc" | "desc" }>({
+        key: "name_flat",
+        direction: "asc",
+    });
+
+    // Pagination state
+    const [pageSize, setPageSize] = useState<number>(25);
+    const [currentPage, setCurrentPage] = useState<number>(1);
+
+    // Horizontal scroll floaters
+    const scrollRef = useRef<HTMLDivElement | null>(null);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(false);
+
+    const handleSort = (key: string) => {
+        setSortConfig((prev) => {
+            if (prev.key === key) {
+                // Toggle direction
+                return { key, direction: prev.direction === "asc" ? "desc" : "asc" };
+            }
+            return { key, direction: "asc" };
+        });
+    };
+
+    // Derived sorted data
+    const sortedData = useMemo(() => {
+        const dataCopy = [...filteredData];
+        if (!sortConfig.key) return dataCopy;
+
+        dataCopy.sort((a: any, b: any) => {
+            const aVal = (a?.[sortConfig.key] ?? "").toString().toLowerCase();
+            const bVal = (b?.[sortConfig.key] ?? "").toString().toLowerCase();
+            if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
+            if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
+            return 0;
+        });
+
+        return dataCopy;
+    }, [filteredData, sortConfig]);
+
+    // Pagination
+    const totalItems = sortedData.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+    const safePage = Math.min(currentPage, totalPages);
+    const startIndex = (safePage - 1) * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, totalItems);
+    const pagedData = useMemo(() => sortedData.slice(startIndex, endIndex), [sortedData, startIndex, endIndex]);
+
+    // Reset currentPage when filters or sort changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [appliedFilters, sortConfig]);
+
+    useEffect(() => {
+        // Clamp page if filters reduce total pages
+        if (currentPage > totalPages) setCurrentPage(totalPages);
+    }, [totalPages, currentPage]);
+
+    // Horizontal scroll detection
+    const updateScrollButtons = () => {
+        if (!scrollRef.current) return;
+        const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+        setCanScrollLeft(scrollLeft > 0);
+        setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 1);
+    };
+
+    useEffect(() => {
+        const el = scrollRef.current;
+        if (!el) return;
+        updateScrollButtons();
+        el.addEventListener('scroll', updateScrollButtons);
+        const resizeObserver = new ResizeObserver(updateScrollButtons);
+        resizeObserver.observe(el);
+        return () => {
+            el.removeEventListener('scroll', updateScrollButtons);
+            resizeObserver.disconnect();
+        };
+    }, []);
+
+    // Re-evaluate scroll buttons when columns or page data change
+    useEffect(() => {
+        updateScrollButtons();
+    }, [columnsFiltered, startIndex, endIndex]);
+
+    // Match patients behavior: take a numeric delta and attempt smooth scroll with fallback
+    const scrollByAmount = (dx: number) => {
+        const el = scrollRef.current;
+        if (!el) return;
+        try {
+            el.scrollBy({ left: dx, behavior: 'smooth' });
+        } catch {
+            (el as any).scrollLeft = (el as any).scrollLeft + dx;
+        }
+    };
 
     return (
         <>
-            <div className="page-wrapper">
+            <div className="page-wrapper users-screen">
                 <div className="content">
-                    <div className="d-flex align-items-sm-center flex-sm-row flex-column gap-2 mb-3 pb-3 border-bottom">
-                        <div className="flex-grow-1"><h4 className="fw-bold mb-0">Users <span className="badge badge-soft-primary fw-medium border py-1 px-2 border-primary fs-13 ms-1">
-                            Total Users : {data.length}
-                        </span></h4></div>
+                    {/* ===== HEADER & TOOLBAR ===== */}
+                    <div className="d-flex align-items-center justify-content-between flex-wrap mb-3 pb-3 border-bottom users-header">
+                        <div className="flex-grow-1">
+                            <h4 className="fw-bold mb-0 text-dark">
+                                Users{" "}
+                                <span className="badge badge-soft-primary fw-medium border py-1 px-2 border-primary fs-13 ms-1">
+                                    Total Users : {data.length}
+                                </span>
+                            </h4>
+                        </div>
 
-                        {/* Filter is now inside Datatable toolbar to match shadcn look */}
+                    </div>
 
-                        <div className="text-end d-flex">
+                    {/* ===== FILTER SECTION ===== */}
+
+
+                    {/* ===== SAVED SEARCH & SEARCH BAR ===== */}
+                    {/* ===== SEARCH BAR + TOOLBAR IN ONE LINE ===== */}
+                    <div className="d-flex align-items-center justify-content-between flex-wrap">
+                        <div className="d-flex align-items-center flex-wrap">
+
+                            <div className="table-search d-flex align-items-center mb-0">
+                                <div className="search-input">
+                                    <SearchInput value={searchText} onChange={handleSearch} />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* TOOLBAR BUTTONS TO THE RIGHT */}
+                        <div className="users-toolbar d-flex align-items-center flex-wrap gap-2">
+
+                            <div className="saved-search-dropdown dropdown">
+                                <button
+                                    className="btn btn-darkish dropdown-toggle"
+                                    type="button"
+                                    data-bs-toggle="dropdown"
+                                    aria-expanded="false"
+                                >
+                                    <i className="ti ti-bookmark me-1"></i>
+                                    {selectedSavedSearch
+                                        ? savedSearches.find((s) => s.id === selectedSavedSearch)?.name || "Saved Searches"
+                                        : "Saved Searches"}
+                                </button>
+
+                                <ul className="dropdown-menu" style={{ maxHeight: "300px", overflowY: "auto" }}>
+                                    <li>
+                                        <button
+                                            className="dropdown-item text-muted"
+                                            type="button"
+                                            onClick={() => {
+                                                setSelectedSavedSearch("");
+                                                setFiltersDraft({ phone: "", roleId: "", address: "", zip: "", stateId: "", cityId: "", status: "" });
+                                                setAppliedFilters({ phone: "", roleId: "", address: "", zip: "", stateId: "", cityId: "", status: "" });
+                                            }}
+                                        >
+                                            <i className="ti ti-x me-2" />
+                                            Clear Selection
+                                        </button>
+                                    </li>
+                                    <li>
+                                        <hr className="dropdown-divider" />
+                                    </li>
+
+                                    {savedSearches.map((search) => (
+                                        <li key={search.id}>
+                                            <div
+                                                className="d-flex align-items-center justify-content-between px-3 py-2 saved-search-item"
+                                                style={{ cursor: "pointer", transition: "background-color 0.2s" }}
+                                                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#f8f9fa")}
+                                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+                                            >
+                                                <button
+                                                    className="btn btn-link text-start text-decoration-none flex-grow-1 p-0"
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleApplySavedSearch(search.id);
+                                                        const dropdown = e.currentTarget.closest(".dropdown");
+                                                        if (dropdown) {
+                                                            const btn = dropdown.querySelector("[data-bs-toggle='dropdown']") as HTMLElement;
+                                                            if (btn) btn.click();
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        border: "none",
+                                                        background: "none",
+                                                        color: selectedSavedSearch === search.id ? "#0d6efd" : "#212529",
+                                                        fontWeight: selectedSavedSearch === search.id ? "600" : "400",
+                                                    }}
+                                                >
+                                                    <i
+                                                        className={`ti ti-${selectedSavedSearch === search.id ? "check" : "bookmark"
+                                                            } me-2`}
+                                                    />
+                                                    {search.name}
+                                                </button>
+
+                                                {/* Delete Button */}
+                                                <button
+                                                    className="btn btn-link text-danger p-0 ms-2"
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleDeleteSavedSearch(search.id);
+                                                    }}
+                                                    title="Delete this saved search"
+                                                    style={{
+                                                        border: "none",
+                                                        background: "none",
+                                                        fontSize: "16px",
+                                                        display: "flex",
+                                                        alignItems: "center",
+                                                        justifyContent: "center",
+                                                    }}
+                                                >
+                                                    <i className="ti ti-trash" />
+                                                </button>
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+
+
                             <button
-                                className="btn btn-outline-primary me-2 fs-13 btn-md"
-                                onClick={() => { setShowFilters(s => !s); closeOpenDropdowns(); }}
+                                className="btn btn-darkish btn-sm"
+                                onClick={() => {
+                                    setShowFilters((s) => !s);
+                                    closeOpenDropdowns();
+                                }}
                                 title="Toggle filters"
                             >
                                 <i className="ti ti-filter me-1" /> Filters
                             </button>
-                            <button onClick={downloadTemplate} className="btn btn-secondary me-2 fs-13 btn-md d-flex align-items-center justify-content-center" title="Download Template" style={{ width: '40px', height: '38px', padding: '0' }}>
-                                <i className="ti ti-download" style={{ fontSize: '18px' }} />
+
+                            <button onClick={downloadTemplate} className="btn btn-light btn-sm" title="Download Template">
+                                <i className="ti ti-download" />
                             </button>
-                            <button onClick={downloadCSV} className="btn btn-info me-2 fs-13 btn-md d-flex align-items-center justify-content-center" title="Download CSV" style={{ width: '40px', height: '38px', padding: '0' }}>
-                                <i className="ti ti-file-download" style={{ fontSize: '18px' }} />
+
+                            <button onClick={downloadCSV} className="btn btn-darkish btn-sm" title="Download CSV">
+                                <i className="ti ti-file-download" />
                             </button>
-                            <label className="btn btn-warning me-2 fs-13 btn-md d-flex align-items-center justify-content-center" title="Upload CSV" style={{ cursor: isUploading ? 'not-allowed' : 'pointer', width: '40px', height: '38px', padding: '0', margin: '0' }}>
-                                {isUploading ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> : <i className="ti ti-upload" style={{ fontSize: '18px' }} />}
-                                <input type="file" accept=".csv" onChange={handleCSVUpload} disabled={isUploading} style={{ display: 'none' }} />
+
+                            <label
+                                className={`btn btn-darkish btn-sm ${isUploading ? "disabled" : ""}`}
+                                title="Upload CSV"
+                                style={{ margin: 0 }}
+                            >
+                                {isUploading ? (
+                                    <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                ) : (
+                                    <i className="ti ti-upload" />
+                                )}
+                                <input
+                                    type="file"
+                                    accept=".csv"
+                                    onChange={handleCSVUpload}
+                                    disabled={isUploading}
+                                    style={{ display: "none" }}
+                                />
                             </label>
-                            <button className="btn btn-outline-secondary me-2 fs-13 btn-md d-flex align-items-center justify-content-center" onClick={() => showModalById('grid_columns_users')} title="Grid Columns" style={{ width: '40px', height: '38px', padding: '0' }}>
-                                <i className="ti ti-columns-3" style={{ fontSize: '18px' }} />
+
+                            <button
+                                className="btn btn-light btn-sm"
+                                onClick={() => showModalById("grid_columns_users")}
+                                title="Grid Columns"
+                            >
+                                <i className="ti ti-columns-3" />
                             </button>
-                            <button className="btn btn-primary fs-13 btn-md" onClick={handleAddOpen}>
-                                <i className="ti ti-plus me-1" /> New User
+
+                            <button className="btn btn-primary btn-sm" onClick={handleAddOpen}>
+                                <i className="ti ti-plus me-1" /> <span>New User</span>
                             </button>
                         </div>
                     </div>
                     {showFilters && (
-                        <div className="border rounded p-3 mb-3">
+                        <div className="filter-panel border rounded p-3 mb-3">
                             <div className="row g-3">
-                                <div className="col-sm-6 col-md-3">
-                                    <label className="form-label">Phone</label>
-                                    <input
-                                        className="form-control"
-                                        value={filtersDraft.phone}
-                                        onChange={e => setFiltersDraft(prev => ({ ...prev, phone: e.target.value }))}
-                                        placeholder="e.g. +1234567890"
-                                    />
-                                </div>
                                 <div className="col-sm-6 col-md-3">
                                     <label className="form-label">Role</label>
                                     <select
                                         className="form-select"
                                         value={filtersDraft.roleId}
-                                        onChange={e => setFiltersDraft(prev => ({ ...prev, roleId: e.target.value }))}
+                                        onChange={(e) =>
+                                            setFiltersDraft((prev) => ({ ...prev, roleId: e.target.value }))
+                                        }
                                     >
                                         <option value="">All Roles</option>
-                                        {roleOptions.map(opt => (
-                                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                        {roleOptions.map((opt) => (
+                                            <option key={opt.value} value={opt.value}>
+                                                {opt.label}
+                                            </option>
                                         ))}
                                     </select>
                                 </div>
+
+                                <div className="col-sm-6 col-md-3">
+                                    <label className="form-label">Phone</label>
+                                    <input
+                                        type="text"
+                                        className="form-control"
+                                        placeholder="Filter by phone..."
+                                        value={filtersDraft.phone}
+                                        onChange={(e) => setFiltersDraft(prev => ({ ...prev, phone: e.target.value }))}
+                                    />
+                                </div>
+
+                                <div className="col-sm-6 col-md-3">
+                                    <label className="form-label">Address</label>
+                                    <input
+                                        type="text"
+                                        className="form-control"
+                                        placeholder="Filter by address..."
+                                        value={filtersDraft.address}
+                                        onChange={(e) => setFiltersDraft(prev => ({ ...prev, address: e.target.value }))}
+                                    />
+                                </div>
+
+                                <div className="col-sm-6 col-md-3">
+                                    <label className="form-label">Zip</label>
+                                    <input
+                                        type="text"
+                                        className="form-control"
+                                        placeholder="Filter by zip..."
+                                        value={filtersDraft.zip}
+                                        onChange={(e) => setFiltersDraft(prev => ({ ...prev, zip: e.target.value }))}
+                                    />
+                                </div>
+
+                                <div className="col-sm-6 col-md-3">
+                                    <label className="form-label">State</label>
+                                    <SearchSelect
+                                        options={stateOptions}
+                                        value={filtersDraft.stateId}
+                                        onChange={(val) => {
+                                            setFiltersDraft(prev => ({ ...prev, stateId: val ? String(val) : '', cityId: '' }));
+                                        }}
+                                        placeholder="Select state..."
+                                    />
+                                </div>
+
+                                <div className="col-sm-6 col-md-3">
+                                    <label className="form-label">City</label>
+                                    <SearchSelect
+                                        options={cityOptionsFilter}
+                                        value={filtersDraft.cityId}
+                                        onChange={(val) => setFiltersDraft(prev => ({ ...prev, cityId: val ? String(val) : '' }))}
+                                        placeholder="Select city..."
+                                        disabled={!filtersDraft.stateId}
+                                    />
+                                </div>
+
                                 <div className="col-sm-6 col-md-3">
                                     <label className="form-label">Status</label>
                                     <select
                                         className="form-select"
                                         value={filtersDraft.status}
-                                        onChange={e => setFiltersDraft(prev => ({ ...prev, status: e.target.value as Filters['status'] }))}
+                                        onChange={(e) =>
+                                            setFiltersDraft((prev) => ({
+                                                ...prev,
+                                                status: e.target.value as Filters["status"],
+                                            }))
+                                        }
                                     >
                                         <option value="">All</option>
                                         <option value="active">Active</option>
@@ -898,19 +1484,28 @@ const UsersComponent = () => {
                                     </select>
                                 </div>
                             </div>
+
                             <div className="d-flex justify-content-end mt-3">
                                 <button
                                     type="button"
                                     className="btn btn-white border me-2"
-                                    onClick={() => { setFiltersDraft({ phone: '', roleId: '', status: '' }); setAppliedFilters({ phone: '', roleId: '', status: '' }); setSelectedSavedSearch(''); }}
+                                    onClick={() => {
+                                        setFiltersDraft({ phone: "", roleId: "", address: "", zip: "", stateId: "", cityId: "", status: "" });
+                                        setAppliedFilters({ phone: "", roleId: "", address: "", zip: "", stateId: "", cityId: "", status: "" });
+                                        setSelectedSavedSearch("");
+                                    }}
                                 >
                                     Clear
                                 </button>
                                 <button
                                     type="button"
                                     className="btn btn-success me-2"
-                                    onClick={() => { setShowSaveSearchModal(true); }}
-                                    disabled={!filtersDraft.phone && !filtersDraft.roleId && !filtersDraft.status}
+                                    onClick={() => {
+                                        setShowSaveSearchModal(true);
+                                    }}
+                                    disabled={
+                                        !filtersDraft.phone && !filtersDraft.roleId && !filtersDraft.address && !filtersDraft.zip && !filtersDraft.stateId && !filtersDraft.cityId && !filtersDraft.status
+                                    }
                                 >
                                     <i className="ti ti-device-floppy me-1" /> Save
                                 </button>
@@ -932,115 +1527,129 @@ const UsersComponent = () => {
                             </div>
                         </div>
                     )}
-                    <div className="d-flex align-items-center justify-content-between flex-wrap">
-                        <div>
-                            <div className="search-set mb-3">
-                                <div className="d-flex align-items-center flex-wrap gap-2">
-                                    {savedSearches.length > 0 && (
-                                        <div className="dropdown mb-0">
-                                            <button
-                                                className="btn btn-sm btn-outline-primary dropdown-toggle"
-                                                type="button"
-                                                data-bs-toggle="dropdown"
-                                                aria-expanded="false"
-                                                style={{ minWidth: '200px' }}
-                                            >
-                                                <i className="ti ti-bookmark me-1" />
-                                                {selectedSavedSearch
-                                                    ? savedSearches.find(s => s.id === selectedSavedSearch)?.name || 'Saved Searches'
-                                                    : 'Saved Searches'}
-                                            </button>
-                                            <ul className="dropdown-menu" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                                                <li>
-                                                    <button
-                                                        className="dropdown-item text-muted"
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setSelectedSavedSearch('');
-                                                            setFiltersDraft({ phone: '', roleId: '', status: '' });
-                                                            setAppliedFilters({ phone: '', roleId: '', status: '' });
-                                                        }}
-                                                    >
-                                                        <i className="ti ti-x me-2" />
-                                                        Clear Selection
-                                                    </button>
-                                                </li>
-                                                <li><hr className="dropdown-divider" /></li>
-                                                {savedSearches.map(search => (
-                                                    <li key={search.id}>
-                                                        <div
-                                                            className="d-flex align-items-center justify-content-between px-3 py-2"
-                                                            style={{
-                                                                cursor: 'pointer',
-                                                                transition: 'background-color 0.2s'
-                                                            }}
-                                                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
-                                                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                                                        >
-                                                            <button
-                                                                className="btn btn-link text-start text-decoration-none flex-grow-1 p-0"
-                                                                type="button"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleApplySavedSearch(search.id);
-                                                                    // Close dropdown after selection
-                                                                    const dropdown = e.currentTarget.closest('.dropdown');
-                                                                    if (dropdown) {
-                                                                        const btn = dropdown.querySelector('[data-bs-toggle="dropdown"]') as HTMLElement;
-                                                                        if (btn) btn.click();
-                                                                    }
-                                                                }}
-                                                                style={{
-                                                                    border: 'none',
-                                                                    background: 'none',
-                                                                    color: selectedSavedSearch === search.id ? '#0d6efd' : '#212529',
-                                                                    fontWeight: selectedSavedSearch === search.id ? '600' : '400'
-                                                                }}
-                                                            >
-                                                                <i className={`ti ti-${selectedSavedSearch === search.id ? 'check' : 'bookmark'} me-2`} />
-                                                                {search.name}
-                                                            </button>
-                                                            <button
-                                                                className="btn btn-link text-danger p-0 ms-2"
-                                                                type="button"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleDeleteSavedSearch(search.id);
-                                                                }}
-                                                                title="Delete this saved search"
-                                                                style={{ border: 'none', background: 'none', fontSize: '16px' }}
-                                                            >
-                                                                <i className="ti ti-trash" />
-                                                            </button>
-                                                        </div>
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </div>
+
+                    {/* ===== Dynamic table driven by columnsFiltered with horizontal scroll (match patients UI) ===== */}
+                    <div className="users-table-container">
+                        <div ref={scrollRef} className="table-responsive users-scroll">
+                            <table className="table table-striped table-hover align-middle users-table">
+                                <thead className="table-dark">
+                                    <tr>
+                                        {columnsFiltered.map((col: any, i: number) => {
+                                            const sortKey = (col as any).sortKey as string | undefined;
+                                            const isSorted = sortKey && sortConfig.key === sortKey;
+                                            const clickable = !!sortKey;
+                                            return (
+                                                <th key={`h-${i}`} onClick={clickable ? () => handleSort(sortKey!) : undefined} style={{ whiteSpace: 'nowrap', cursor: clickable ? 'pointer' as const : 'default' }}>
+                                                    {col.title}{' '}
+                                                    {clickable ? (
+                                                        isSorted ? (sortConfig.direction === 'asc' ? <i className="ti ti-arrow-up" /> : <i className="ti ti-arrow-down" />) : <i className="ti ti-arrows-sort opacity-50" />
+                                                    ) : null}
+                                                </th>
+                                            );
+                                        })}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {pagedData.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={columnsFiltered.length} className="text-center py-4 text-muted">No users found</td>
+                                        </tr>
+                                    ) : (
+                                        pagedData.map((r: any, idx: number) => (
+                                            <tr key={r.id || idx}>
+                                                {columnsFiltered.map((col: any, ci: number) => {
+                                                    const getVal = (obj: any, path?: string) => {
+                                                        if (!path) return undefined;
+                                                        return path.split('.').reduce((o: any, k: string) => (o ? o[k] : undefined), obj);
+                                                    };
+                                                    const content = col.render ? col.render(getVal(r, col.dataIndex), r, idx) : (col.dataIndex ? (getVal(r, col.dataIndex) ?? '—') : '—');
+                                                    return <td key={`c-${idx}-${ci}`}>{content}</td>;
+                                                })}
+                                            </tr>
+                                        ))
                                     )}
-                                    <div className="table-search d-flex align-items-center mb-0">
-                                        <div className="search-input">
-                                            <SearchInput value={searchText} onChange={handleSearch} />
-                                        </div>
-                                    </div>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Pagination (left) */}
+                        <div className="d-flex align-items-center gap-3 mt-2">
+                            <div className="d-flex align-items-center gap-3">
+                                <div className="d-flex align-items-center gap-2">
+                                    <span className="text-muted">Items per page:</span>
+                                    <select
+                                        className="form-select form-select-sm"
+                                        style={{ width: 80 }}
+                                        value={pageSize}
+                                        onChange={(e) => setPageSize(parseInt(e.target.value, 10) || 10)}
+                                    >
+                                        <option value={10}>10</option>
+                                        <option value={25}>25</option>
+                                        <option value={50}>50</option>
+                                        <option value={100}>100</option>
+                                    </select>
+                                </div>
+                                <div className="text-muted">
+                                    {totalItems === 0 ? '0 – 0 of 0' : `${startIndex + 1} – ${endIndex} of ${totalItems}`}
+                                </div>
+                                <div className="pager-icons d-flex align-items-center gap-1">
+                                    <button className="icon-btn" disabled={safePage <= 1} onClick={() => setCurrentPage(1)} aria-label="First" title="First">
+                                        <i className="ti ti-chevrons-left" />
+                                    </button>
+                                    <button className="icon-btn" disabled={safePage <= 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} aria-label="Previous" title="Previous">
+                                        <i className="ti ti-chevron-left" />
+                                    </button>
+                                    <button className="icon-btn" disabled={safePage >= totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} aria-label="Next" title="Next">
+                                        <i className="ti ti-chevron-right" />
+                                    </button>
+                                    <button className="icon-btn" disabled={safePage >= totalPages} onClick={() => setCurrentPage(totalPages)} aria-label="Last" title="Last">
+                                        <i className="ti ti-chevrons-right" />
+                                    </button>
                                 </div>
                             </div>
                         </div>
-                        <div className="d-flex table-dropdown mb-3 right-content align-items-center flex-wrap row-gap-3">
-                            {/* keep existing filters/sort controls if desired */}
-                        </div>
-                    </div>
-                    <div className="table-responsive">
-                        {/* 4. Use processedData for the dataSource with shadcn toolbar */}
-                        <Datatable
-                            columns={columnsFiltered}
-                            dataSource={filteredData}
-                            Selection={false}
-                            searchText={searchText}
-                        />
+
+                        {/* Fixed bottom-right horizontal scroll floaters (double arrows) - same as patients */}
+                        {(canScrollLeft || canScrollRight) && (
+                            <div className="hscroll-floaters">
+                                {canScrollLeft && (
+                                    <button
+                                        type="button"
+                                        className="hscroll-btn"
+                                        aria-label="Scroll left"
+                                        onClick={() => {
+                                            const el = scrollRef.current;
+                                            const step = el ? Math.max(240, Math.floor(el.clientWidth * 0.8)) : 240;
+                                            scrollByAmount(-step);
+                                        }}
+                                    >
+                                        <svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true" style={{ transform: 'scaleX(-1)' }}>
+                                            <path d="M2 12L12 6v12L2 12zM12 12l10-6v12l-10-6z" fill="currentColor"></path>
+                                        </svg>
+                                    </button>
+                                )}
+                                {canScrollRight && (
+                                    <button
+                                        type="button"
+                                        className="hscroll-btn"
+                                        aria-label="Scroll right"
+                                        onClick={() => {
+                                            const el = scrollRef.current;
+                                            const step = el ? Math.max(240, Math.floor(el.clientWidth * 0.8)) : 240;
+                                            scrollByAmount(step);
+                                        }}
+                                    >
+                                        <svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true">
+                                            <path d="M2 12L12 6v12L2 12zM12 12l10-6v12l-10-6z" fill="currentColor"></path>
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
+
 
             {/* Grid Columns Modal */}
             <div id="grid_columns_users" className="modal fade" tabIndex={-1} aria-hidden="true">
@@ -1126,38 +1735,156 @@ const UsersComponent = () => {
 
             {/* Edit User Modal */}
             <div id="edit_user" className="modal fade" tabIndex={-1} aria-hidden="true">
-                <div className="modal-dialog modal-dialog-centered">
-                    <div className="modal-content">
-                        <div className="modal-header">
-                            <h5 className="modal-title">Edit User</h5>
-                            <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close" onClick={() => hideModalById('edit_user')} />
+                <div className="modal-dialog modal-md modal-dialog-centered">
+                    <div className="modal-content user-form-modal">
+                        <div className="modal-header py-2 px-3 border-0 bg-teal-700 text-white rounded-top">
+                            <h5 className="modal-title fw-semibold">Edit User</h5>
+
                         </div>
+
+
                         <form onSubmit={handleEditSubmit}>
-                            <div className="modal-body">
-                                <div className="mb-3">
-                                    <label className="form-label">Name <span className="text-danger">*</span></label>
-                                    <input className="form-control" value={editName} onChange={e => setEditName(e.target.value)} />
+                            <div className="modal-body px-4 pt-3 pb-1">
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        Name: <span className="text-danger">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="form-control required-field"
+                                        placeholder="Enter full name"
+                                        value={editName}
+                                        onChange={(e) => setEditName(e.target.value)}
+                                    />
                                 </div>
-                                <div className="mb-3">
-                                    <label className="form-label">Email <span className="text-danger">*</span></label>
-                                    <input className="form-control" value={editEmail} onChange={e => setEditEmail(e.target.value)} />
+
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        Email: <span className="text-danger">*</span>
+                                    </label>
+                                    <input
+                                        type="email"
+                                        className="form-control required-field"
+                                        placeholder="Enter email address"
+                                        value={editEmail}
+                                        onChange={(e) => setEditEmail(e.target.value)}
+                                    />
                                 </div>
-                                <div className="mb-3">
-                                    <label className="form-label">Phone Number</label>
-                                    <input className="form-control" value={editPhoneNumber} onChange={e => setEditPhoneNumber(e.target.value)} />
+
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        Phone Number: <span className="text-danger">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="form-control required-field"
+                                        placeholder="e.g. +1234567890"
+                                        value={editPhoneNumber}
+                                        onChange={(e) => setEditPhoneNumber(e.target.value)}
+                                    />
                                 </div>
-                                <div className="mb-0">
-                                    <label className="form-label">Role <span className="text-danger">*</span></label>
-                                    <select className="form-select" value={editRole} onChange={e => setEditRole(e.target.value)}>
-                                        <option value="">Select role</option>
-                                        {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        Role: <span className="text-danger">*</span>
+                                    </label>
+                                    <select
+                                        className="form-select required-field"
+                                        value={editRole}
+                                        onChange={(e) => setEditRole(e.target.value)}
+                                    >
+                                        <option value="">Select Role</option>
+                                        {roleOptions.map((opt) => (
+                                            <option key={opt.value} value={opt.value}>
+                                                {opt.label}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
+
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        State <span className="text-danger">*</span>
+                                    </label>
+                                    <SearchSelect
+                                        options={stateOptions}
+                                        value={editStateId}
+                                        onChange={(val) => {
+                                            setEditStateId(val ? Number(val) : null);
+                                            setEditCityId(null);
+                                        }}
+                                        placeholder="Select state..."
+                                        inputClassName="required-field"
+                                    />
+                                </div>
+
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        City <span className="text-danger">*</span>
+                                    </label>
+                                    <SearchSelect
+                                        options={cityOptionsEdit}
+                                        value={editCityId}
+                                        onChange={(val) => setEditCityId(val ? Number(val) : null)}
+                                        placeholder="Select city..."
+                                        disabled={!editStateId}
+                                        inputClassName="required-field"
+                                    />
+                                </div>
+
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        Address <span className="text-danger">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="form-control required-field"
+                                        placeholder="Enter address"
+                                        value={editAddress}
+                                        onChange={(e) => setEditAddress(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        Zip <span className="text-danger">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="form-control required-field"
+                                        placeholder="Enter zip code"
+                                        value={editZip}
+                                        onChange={(e) => setEditZip(e.target.value)}
+                                    />
+                                </div>
                             </div>
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-white border" data-bs-dismiss="modal" onClick={() => hideModalById('edit_user')}>Cancel</button>
-                                <button type="submit" className="btn btn-primary" disabled={!isEditFormValid || isEditing}>
-                                    {isEditing ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> : 'Save'}
+
+                            <div className="modal-footer border-top py-2 px-2.5 d-flex justify-content-end gap-2">
+                                <button
+                                    type="button"
+                                    className="btn btn-outline-danger px-3"
+                                    data-bs-dismiss="modal"
+                                    onClick={() => hideModalById("edit_user")}
+                                >
+                                    <i className="ti ti-x me-1"></i> Cancel
+                                </button>
+
+                                <button
+                                    type="submit"
+                                    className="btn btn-success px-4"
+                                    disabled={!isEditFormValid || isEditing}
+                                >
+                                    {isEditing ? (
+                                        <span
+                                            className="spinner-border spinner-border-sm"
+                                            role="status"
+                                            aria-hidden="true"
+                                        ></span>
+                                    ) : (
+                                        <>
+                                            <i className="ti ti-device-floppy me-1"></i> Save Changes
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         </form>
@@ -1165,46 +1892,177 @@ const UsersComponent = () => {
                 </div>
             </div>
 
+
+            {/* Add User Modal */}
             {/* Add User Modal */}
             <div id="add_user" className="modal fade" tabIndex={-1} aria-hidden="true">
-                <div className="modal-dialog modal-dialog-centered">
-                    <div className="modal-content">
-                        <div className="modal-header">
-                            <h5 className="modal-title">New User</h5>
-                            <button type="button" className="btn-close" data-bs-dismiss="modal" aria-label="Close" onClick={() => hideModalById('add_user')} />
+                <div className="modal-dialog modal-md modal-dialog-centered">
+                    <div className="modal-content user-form-modal">
+                        {/* Header */}
+                        <div className="modal-header justify-content-center py-3 border-0 bg-teal-700 text-white rounded-top">
+                            <h5 className="modal-title fw-semibold text-center mb-0">
+                                Add New User
+                            </h5>
+
                         </div>
+
+                        {/* Section Header */}
+
+
+                        {/* Form */}
                         <form onSubmit={handleAddUser}>
-                            <div className="modal-body">
-                                <div className="mb-3">
-                                    <label className="form-label">Name <span className="text-danger">*</span></label>
-                                    <input className="form-control" value={name} onChange={e => setName(e.target.value)} />
+                            <div className="modal-body px-4 pt-3 pb-1">
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        Name <span className="text-danger">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="form-control required-field"
+                                        placeholder="Enter full name"
+                                        value={name}
+                                        onChange={(e) => setName(e.target.value)}
+                                    />
                                 </div>
-                                <div className="mb-3">
-                                    <label className="form-label">Email <span className="text-danger">*</span></label>
-                                    <input className="form-control" value={email} onChange={e => setEmail(e.target.value)} />
+
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        Email <span className="text-danger">*</span>
+                                    </label>
+                                    <input
+                                        type="email"
+                                        className="form-control required-field"
+                                        placeholder="Enter email address"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                    />
                                 </div>
-                                <div className="mb-3">
-                                    <label className="form-label">Phone Number</label>
-                                    <input className="form-control" value={phoneNumber} onChange={e => setPhoneNumber(e.target.value)} />
+
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        Phone Number <span className="text-danger">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="form-control required-field"
+                                        placeholder="e.g. +1234567890"
+                                        value={phoneNumber}
+                                        onChange={(e) => setPhoneNumber(e.target.value)}
+                                    />
                                 </div>
-                                <div className="mb-0">
-                                    <label className="form-label">Role <span className="text-danger">*</span></label>
-                                    <select className="form-select" value={role} onChange={e => setRole(e.target.value)}>
-                                        <option value="">Select role</option>
-                                        {roleOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        Role <span className="text-danger">*</span>
+                                    </label>
+                                    <select
+                                        className="form-select required-field"
+                                        value={role}
+                                        onChange={(e) => setRole(e.target.value)}
+                                    >
+                                        <option value="">Select Role</option>
+                                        {roleOptions.map((opt) => (
+                                            <option key={opt.value} value={opt.value}>
+                                                {opt.label}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
+
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        State <span className="text-danger">*</span>
+                                    </label>
+                                    <SearchSelect
+                                        options={stateOptions}
+                                        value={addStateId}
+                                        onChange={(val) => {
+                                            setAddStateId(val ? Number(val) : null);
+                                            setAddCityId(null);
+                                        }}
+                                        placeholder="Select state..."
+                                        inputClassName="required-field"
+                                    />
+                                </div>
+
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        City <span className="text-danger">*</span>
+                                    </label>
+                                    <SearchSelect
+                                        options={cityOptionsAdd}
+                                        value={addCityId}
+                                        onChange={(val) => setAddCityId(val ? Number(val) : null)}
+                                        placeholder="Select city..."
+                                        disabled={!addStateId}
+                                        inputClassName="required-field"
+                                    />
+                                </div>
+
+                                <div className="form-row">
+                                    <label className="form-label text-dark fw-semibold">
+                                        Address <span className="text-danger">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="form-control required-field"
+                                        placeholder="Enter address"
+                                        value={addAddress}
+                                        onChange={(e) => setAddAddress(e.target.value)}
+                                    />
+                                </div>
+
+                                <div className="form-row mb-0">
+                                    <label className="form-label text-dark fw-semibold">
+                                        Zip <span className="text-danger">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="form-control required-field"
+                                        placeholder="Enter zip code"
+                                        value={addZip}
+                                        onChange={(e) => setAddZip(e.target.value)}
+                                    />
+                                </div>
                             </div>
-                            <div className="modal-footer">
-                                <button type="button" className="btn btn-white border" data-bs-dismiss="modal" onClick={() => hideModalById('add_user')}>Cancel</button>
-                                <button type="submit" className="btn btn-primary" disabled={!isAddFormValid || isAddingUser}>
-                                    {isAddingUser ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> : 'Add New User'}
+
+                            {/* Footer */}
+                            <div className="modal-footer border-top py-2 px-2.5 d-flex justify-content-end gap-2">
+                                <button
+                                    type="button"
+                                    className="btn btn-outline-danger px-3"
+                                    data-bs-dismiss="modal"
+                                    onClick={() => hideModalById("add_user")}
+                                >
+                                    <i className="ti ti-x me-1"></i> Cancel
+                                </button>
+
+                                <button
+                                    type="submit"
+                                    className="btn btn-success px-4"
+                                    disabled={!isAddFormValid || isAddingUser}
+                                >
+                                    {isAddingUser ? (
+                                        <span
+                                            className="spinner-border spinner-border-sm"
+                                            role="status"
+                                            aria-hidden="true"
+                                        ></span>
+                                    ) : (
+                                        <>
+                                            <i className="ti ti-device-floppy me-1"></i> Add New User
+                                        </>
+                                    )}
                                 </button>
                             </div>
                         </form>
                     </div>
                 </div>
             </div>
+
+
+
+
 
             {/* Save Search Modal */}
             <div id="save_search_modal" className={`modal fade ${showSaveSearchModal ? 'show' : ''}`} tabIndex={-1} aria-hidden={!showSaveSearchModal} style={{ display: showSaveSearchModal ? 'block' : 'none' }}>

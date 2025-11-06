@@ -5,87 +5,63 @@ const routes = all_routes;
 
 export const ProviderSidebarData = [
     {
-        tittle: "Provider Portal",
+
         icon: "airplay",
         showAsTab: true,
         separateRoute: false,
         submenuItems: [
             {
-                label: "Dashboard", // Added a dashboard link
-                link: routes.dashboard,
+                label: "Dashboard",
+                link: routes.dashboard, // Reuse main dashboard or create a specific patient one
                 submenu: false,
                 icon: "layout-dashboard",
                 base: "dashboard",
                 submenuItems: [],
             },
             {
-                label: "Bookings",
-                link: "#",
-                submenu: true,
-                icon: "calendar-event",
-                base: "bookings",
-                submenuItems: [
-                    { label: "Add Appointment", link: "/provider/bookings/add" }, // Placeholder
-                    { label: "View Appointments", link: routes.appointments }, // Grid/Calendar view for provider
-                    // Might filter by Consultation/Procedure on the View page
-                ],
-            },
-            {
                 label: "Availability",
                 link: "#",
                 submenu: false,
-                icon: "calendar-time",
+                icon: "calendar-event",
                 base: "availability",
-                submenuItems: [],
+                submenuItems: [
+
+                ],
             },
             {
-                label: "Profile",
+                label: "Bookings",
                 link: "#",
                 submenu: false,
-                icon: "user-circle",
-                base: "profile",
+                icon: "stethoscope",
+                base: "bookings",
                 submenuItems: [],
             },
             {
                 label: "Consultations",
                 link: "#",
                 submenu: false,
-                icon: "stethoscope",
+                icon: "report-medical",
                 base: "consultations",
                 submenuItems: [],
             },
+
             {
-                label: "Procedures",
-                link: "#", // Existing route, filtered for provider
+                label: "Procedures", // Includes MRN info
+                link: "#",
                 submenu: false,
-                icon: "report-medical",
+                icon: "user-circle",
                 base: "procedures",
                 submenuItems: [],
             },
             {
-                label: "Patients", // Link to list or specific dashboard view
-                link: "#", // Existing route, maybe filtered view
+                label: "Billing", // Includes MRN info
+                link: "#",
                 submenu: false,
-                icon: "user-heart",
-                base: "patients",
-                submenuItems: [],
-            },
-            {
-                label: "Billing",
-                link: "#", // Link to provider-related invoices
-                submenu: false,
-                icon: "coin",
+                icon: "user-circle",
                 base: "billing",
                 submenuItems: [],
-            },
-            {
-                label: "Documents",
-                link: "#", // Placeholder
-                submenu: false,
-                icon: "file-stack",
-                base: "documents",
-                submenuItems: [],
-            },
+            }, ,
+
             {
                 label: "Messaging",
                 link: routes.chat, // Existing route

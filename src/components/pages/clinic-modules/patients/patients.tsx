@@ -6,6 +6,80 @@ import ImageWithBasePath from '@/core/imageWithBasePath';
 import { all_routes } from '../../../../routes/all_routes';
 import SearchInput from '@/core/common/dataTable/dataTableSearch';
 import getSupabaseClient from '@/lib/supabaseClient';
+import { formatDateTime } from '@/core/common/dateTime';
+import "@/style/css/admin-screens.css";
+
+// Lightweight searchable select (no external deps)
+type SSOption = { value: string | number; label: string };
+const SearchSelect: React.FC<{
+  options: SSOption[];
+  value: string | number | null | undefined;
+  onChange: (val: string | number | null) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  allowClear?: boolean;
+  inputClassName?: string;
+}> = ({ options, value, onChange, placeholder = 'Select...', disabled, allowClear = true, inputClassName }) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+
+  const selected = useMemo(() => options.find(o => String(o.value) === String(value)) || null, [options, value]);
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter(o => o.label.toLowerCase().includes(q));
+  }, [options, query]);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (!wrapRef.current) return;
+      if (!wrapRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  const displayText = open ? query : (selected?.label ?? '');
+
+  return (
+    <div className="position-relative" ref={wrapRef}>
+      <div className="d-flex align-items-center">
+        <input
+          className={`form-control ${inputClassName || ''}`}
+          value={displayText}
+          onChange={e => { setQuery(e.target.value); if (!open) setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          placeholder={placeholder}
+          disabled={disabled}
+        />
+        {allowClear && (value !== null && value !== undefined && String(value) !== '') && (
+          <button type="button" className="btn btn-link text-muted ms-1 p-0 px-1" onClick={() => { onChange(null); setQuery(''); }} aria-label="Clear">
+            <i className="ti ti-x" />
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="dropdown-menu show w-100" style={{ maxHeight: 240, overflowY: 'auto' }}>
+          {filtered.length === 0 ? (
+            <span className="dropdown-item text-muted">No results</span>
+          ) : (
+            filtered.map(opt => (
+              <button
+                key={String(opt.value)}
+                type="button"
+                className={`dropdown-item ${String(opt.value) === String(value) ? 'active' : ''}`}
+                onClick={() => { onChange(opt.value); setOpen(false); setQuery(''); }}
+              >
+                {opt.label}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const PatientsComponent = () => {
   const [data, setData] = useState<any[]>([]);
@@ -13,11 +87,13 @@ const PatientsComponent = () => {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [dob, setDob] = useState("");
+  const [addPhoneNumber, setAddPhoneNumber] = useState("");
   const [loadingIds, setLoadingIds] = useState<Record<string, boolean>>({});
   const [editingPatient, setEditingPatient] = useState<any | null>(null);
   const [editEmail, setEditEmail] = useState("");
   const [editName, setEditName] = useState("");
   const [editDob, setEditDob] = useState("");
+  const [editPhoneNumber, setEditPhoneNumber] = useState("");
   const [states, setStates] = useState<any[]>([]);
   const [cities, setCities] = useState<any[]>([]);
   const [addAddress, setAddAddress] = useState("");
@@ -38,6 +114,8 @@ const PatientsComponent = () => {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+
+
 
   // Filters UI state
   type Filters = {
@@ -61,6 +139,18 @@ const PatientsComponent = () => {
   const [showSaveSearchModal, setShowSaveSearchModal] = useState(false);
   const [saveSearchName, setSaveSearchName] = useState('');
   const [isSavingSearch, setIsSavingSearch] = useState(false);
+
+  // Options for searchable selects
+  const stateOptions = useMemo(() => (states || []).map(s => ({ value: String(s.id), label: s.name })), [states]);
+  const cityOptionsFilter = useMemo(() => (cities || [])
+    .filter(c => !filtersDraft.stateId || String(c.state_id) === String(filtersDraft.stateId))
+    .map(c => ({ value: String(c.id), label: c.name })), [cities, filtersDraft.stateId]);
+  const cityOptionsAdd = useMemo(() => (cities || [])
+    .filter(c => !addStateId || String(c.state_id) === String(addStateId))
+    .map(c => ({ value: String(c.id), label: c.name })), [cities, addStateId]);
+  const cityOptionsEdit = useMemo(() => (cities || [])
+    .filter(c => !editStateId || String(c.state_id) === String(editStateId))
+    .map(c => ({ value: String(c.id), label: c.name })), [cities, editStateId]);
 
   // CSV helper functions
   const downloadCSV = () => {
@@ -91,6 +181,23 @@ const PatientsComponent = () => {
       showToast('CSV downloaded successfully', 'success');
     } catch (e: any) {
       showToast('Failed to download CSV: ' + e.message, 'danger');
+    }
+  };
+
+  const handleShadowLogin = (record: any) => {
+    try {
+      const userId = record?.id ?? record?.user?.id ?? record?.user?.user?.id;
+      if (!userId) {
+        showToast('Unable to determine user for shadow login', 'danger');
+        return;
+      }
+      // Placeholder behavior: hook up your real impersonation endpoint here
+      console.debug('[patients] Shadow Login clicked for', userId);
+      showToast('Shadow login action triggered', 'info');
+      // Example (if you add an endpoint): window.open(`/api/impersonate?userId=${userId}`, '_blank');
+    } catch (e) {
+      console.error('[patients] handleShadowLogin error', e);
+      showToast('Shadow login failed to start', 'danger');
     }
   };
 
@@ -302,6 +409,42 @@ const PatientsComponent = () => {
     });
   };
 
+  // Show Bootstrap modal by id with graceful fallback (matches users.tsx behavior)
+  const showModalById = (id: string) => {
+    try {
+      const modalEl = document.getElementById(id);
+      // @ts-ignore
+      const bs = (window as any).bootstrap;
+      if (!modalEl) return;
+
+      try {
+        if (bs && bs.Modal) {
+          // @ts-ignore
+          const inst = bs.Modal.getOrCreateInstance?.(modalEl) ?? new bs.Modal(modalEl);
+          inst.show();
+          return;
+        }
+      } catch (innerErr) {
+        console.debug('[patients] bootstrap.Modal show failed', innerErr);
+      }
+
+      // Fallback to DOM manipulation
+      document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+      modalEl.classList.add('show');
+      (modalEl as any).style.display = 'block';
+      modalEl.setAttribute('aria-modal', 'true');
+      modalEl.removeAttribute('aria-hidden');
+      document.body.classList.add('modal-open');
+      if (!document.querySelector('.modal-backdrop')) {
+        const backdrop = document.createElement('div');
+        backdrop.className = 'modal-backdrop fade show';
+        document.body.appendChild(backdrop);
+      }
+    } catch (e) {
+      console.error('[patients] showModalById error', e);
+    }
+  };
+
   const fetchPatients = async () => {
     setLoading(true);
     try {
@@ -447,128 +590,18 @@ const PatientsComponent = () => {
   }, [currentUserId]);
 
   const columns = [
-    {
-      title: 'Name',
-      dataIndex: 'user_metadata.name',
-      sorter: (a: any, b: any) => (a.user_metadata?.name ?? a.email ?? '').localeCompare(b.user_metadata?.name ?? b.email ?? ''),
-      render: (val: any, record: any) => record.user_metadata?.name ?? record.email
-    },
-    {
-      title: 'Email',
-      dataIndex: 'email',
-      sorter: (a: any, b: any) => (a.email ?? '').localeCompare(b.email ?? '')
-    },
-
-    {
-      title: 'Address',
-      dataIndex: 'patient.address',
-      sorter: (a: any, b: any) => (a?.patient?.address ?? '').localeCompare(b?.patient?.address ?? ''),
-      render: (v: any, r: any) => r?.patient?.address ?? ''
-    },
-    {
-      title: 'Zip',
-      dataIndex: 'patient.zip',
-      sorter: (a: any, b: any) => (a?.patient?.zip ?? '').localeCompare(b?.patient?.zip ?? ''),
-      render: (v: any, r: any) => r?.patient?.zip ?? ''
-    },
-    {
-      title: 'State',
-      dataIndex: 'patient.state_id',
-      sorter: (a: any, b: any) => {
-        const aSid = a?.patient?.state_id ?? null;
-        const bSid = b?.patient?.state_id ?? null;
-        const aSt = states.find(s => String(s.id) === String(aSid));
-        const bSt = states.find(s => String(s.id) === String(bSid));
-        return (aSt?.name ?? a?.patient?.state_name ?? '').localeCompare(bSt?.name ?? b?.patient?.state_name ?? '');
-      },
-      render: (v: any, r: any) => {
-        const sid = r?.patient?.state_id ?? null;
-        const st = states.find(s => String(s.id) === String(sid));
-        return st ? st.name : (r?.patient?.state_name ?? '');
-      }
-    },
-    {
-      title: 'City',
-      dataIndex: 'patient.city_id',
-      sorter: (a: any, b: any) => {
-        const aCid = a?.patient?.city_id ?? null;
-        const bCid = b?.patient?.city_id ?? null;
-        const aCt = cities.find(c => String(c.id) === String(aCid));
-        const bCt = cities.find(c => String(c.id) === String(bCid));
-        return (aCt?.name ?? a?.patient?.city_name ?? '').localeCompare(bCt?.name ?? b?.patient?.city_name ?? '');
-      },
-      render: (v: any, r: any) => {
-        const cid = r?.patient?.city_id ?? null;
-        const ct = cities.find(c => String(c.id) === String(cid));
-        return ct ? ct.name : (r?.patient?.city_name ?? '');
-      }
-    },
-
-    {
-      title: 'DOB',
-      dataIndex: 'date_of_birth',
-      sorter: (a: any, b: any) => {
-        const aDob = a?.date_of_birth ?? a?.patient?.date_of_birth ?? a?.profile?.date_of_birth ?? a?.user_metadata?.date_of_birth ?? a?.user_metadata?.dob ?? '';
-        const bDob = b?.date_of_birth ?? b?.patient?.date_of_birth ?? b?.profile?.date_of_birth ?? b?.user_metadata?.date_of_birth ?? b?.user_metadata?.dob ?? '';
-        return String(aDob).localeCompare(String(bDob));
-      },
-      render: (val: any, record: any) => {
-        // prefer top-level record.date_of_birth (your table), then application row / profile / metadata
-        const dob = record?.date_of_birth ?? record?.patient?.date_of_birth ?? record?.profile?.date_of_birth ?? record?.user_metadata?.date_of_birth ?? record?.user_metadata?.dob ?? '';
-        return dob ? String(dob) : '';
-      }
-    },
-
-    {
-      title: 'Reset Password', render: (v: any, r: any) => {
-        const userId = r?.id ?? r?.user?.id ?? r?.user?.user?.id;
-        return (
-          <div>
-            <a href="#" className="text-primary" onClick={(e) => { e.preventDefault(); handleResetOpen(r); }} title="Reset Password"><i className="ti ti-key" /></a>
-          </div>
-        );
-      }
-    },
-    {
-      title: 'Status', dataIndex: 'patient.is_active', render: (_: any, record: any) => {
-        // Prefer patient-specific application row, fall back to admin row. Default to true.
-        const isActive = record?.patient?.is_active ?? record?.admin?.is_active ?? true;
-        const userId = record?.id ?? record?.user?.id ?? record?.user?.user?.id;
-        const isLoading = !!(userId && loadingIds[userId]);
-        return (
-          <span
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleToggleActive(record); } }}
-            onClick={async (e) => { e.preventDefault(); await handleToggleActive(record); }}
-            className={`badge ${isActive ? 'badge-soft-success' : 'badge-soft-danger'} border ${isActive ? 'border-success' : 'border-danger'} px-2 py-1 fs-13 fw-medium`}
-            style={{ cursor: isLoading ? 'not-allowed' : 'pointer' }}
-            aria-disabled={isLoading}
-          >
-            {isLoading ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> : (isActive ? 'Active' : 'Inactive')}
-          </span>
-        );
-      }
-    },
-    {
-      title: 'Actions', render: (v: any, r: any) => {
-        const userId = r?.id ?? r?.user?.id ?? r?.user?.user?.id;
-        const isLoading = !!(userId && loadingIds[userId]);
-        if (isLoading) {
-          return <div><span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>;
-        }
-        return (
-          <div className="action-item">
-            <a href="#" onClick={(e) => e.preventDefault()} data-bs-toggle="dropdown"><i className="ti ti-dots-vertical" /></a>
-            <ul className="dropdown-menu p-2">
-              <li><a href="#" className="dropdown-item" onClick={(e) => { e.preventDefault(); handleEditOpen(r); }}>Edit</a></li>
-              <li><a href="#" className="dropdown-item text-danger" onClick={async (e) => { e.preventDefault(); await handleSoftDelete(r); }}>Delete</a></li>
-            </ul>
-          </div>
-        );
-      }
-    }
-
+    { title: 'Actions', key: 'actions' },
+    { title: 'Status', key: 'status', sortKey: 'is_active_flat' },
+    { title: 'Name', dataIndex: 'user_metadata.name', sortKey: 'name_flat' },
+    { title: 'Email', dataIndex: 'email', sortKey: 'email_flat' },
+    { title: 'Phone', dataIndex: 'phone_flat', sortKey: 'phone_flat' },
+    { title: 'State', dataIndex: 'patient.state_id', render: (v: any, r: any) => { const sid = r?.patient?.state_id ?? null; const st = states.find((s: any) => String(s.id) === String(sid)); return st ? st.name : (r?.patient?.state_name ?? ''); } },
+    { title: 'City', dataIndex: 'patient.city_id', render: (v: any, r: any) => { const cid = r?.patient?.city_id ?? null; const ct = cities.find((c: any) => String(c.id) === String(cid)); return ct ? ct.name : (r?.patient?.city_name ?? ''); } },
+    { title: 'Zip Code', dataIndex: 'patient.zip', sortKey: 'zip_flat' },
+    { title: 'Address', dataIndex: 'patient.address', sortKey: 'address_flat' },
+    { title: 'Reset Password', key: 'reset_password' },
+    { title: 'Date Created', dataIndex: 'created_at', sortKey: 'created_at_flat', render: (_: any, r: any) => formatDateTime(r?.created_at_flat ?? r?.patient?.created_at ?? r?.created_at ?? r?.user?.created_at) },
+    { title: 'Last Updated', dataIndex: 'updated_at', sortKey: 'updated_at_flat', render: (_: any, r: any) => formatDateTime(r?.updated_at_flat ?? r?.patient?.updated_at ?? r?.updated_at ?? r?.user?.updated_at) },
   ];
 
   // Flatten common fields for filtering
@@ -578,20 +611,26 @@ const PatientsComponent = () => {
       const emailFlat = record?.email ?? '';
       const addressFlat = record?.patient?.address ?? '';
       const zipFlat = record?.patient?.zip ?? '';
+      const phoneFlat = record?.patient?.phone_number ?? record?.patient?.phone ?? record?.profile?.phone ?? record?.user_metadata?.phone ?? record?.admin?.phone_number ?? '';
       const stateIdFlat = record?.patient?.state_id ?? null;
       const cityIdFlat = record?.patient?.city_id ?? null;
       const isActiveFlat = (record?.patient?.is_active ?? record?.admin?.is_active ?? true) ? true : false;
       const dobFlat = record?.date_of_birth ?? record?.patient?.date_of_birth ?? record?.profile?.date_of_birth ?? record?.user_metadata?.date_of_birth ?? record?.user_metadata?.dob ?? '';
+      const createdAtFlat = record?.patient?.created_at ?? record?.created_at ?? record?.user?.created_at ?? '';
+      const updatedAtFlat = record?.patient?.updated_at ?? record?.updated_at ?? record?.user?.updated_at ?? '';
       return {
         ...record,
         name_flat: nameFlat,
         email_flat: emailFlat,
         address_flat: addressFlat,
         zip_flat: zipFlat,
+        phone_flat: phoneFlat,
         state_id_flat: stateIdFlat,
         city_id_flat: cityIdFlat,
         is_active_flat: isActiveFlat,
-        dob_flat: dobFlat
+        dob_flat: dobFlat,
+        created_at_flat: createdAtFlat,
+        updated_at_flat: updatedAtFlat
       };
     });
   }, [data]);
@@ -686,8 +725,7 @@ const PatientsComponent = () => {
         }
       } catch { }
       showToast('Grid columns saved', 'success');
-      const el = document.getElementById('grid_columns_patients'); if (el) (el as any).close?.();
-      try { const bs = (window as any).bootstrap; if (bs?.Modal) bs.Modal.getOrCreateInstance(el!).hide(); } catch { }
+      try { await hideModalById('grid_columns_patients'); } catch (_) { }
     } catch (e: any) {
       showToast(e?.message || 'Failed to save grid columns', 'danger');
     } finally { setIsSavingCols(false); }
@@ -696,6 +734,86 @@ const PatientsComponent = () => {
   const resetGridColumns = () => setVisibleColIds(new Set(allColIds));
 
   const [searchText, setSearchText] = useState<string>("");
+
+  // Sorting state
+  const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'name_flat', direction: 'asc' });
+
+  const handleSort = (key: string) => {
+    setSortConfig(prev => ({
+      key,
+      direction: prev.key === key && prev.direction === 'asc' ? 'desc' : 'asc'
+    }));
+  };
+
+  // Sorted data based on sortConfig
+  const sortedData = useMemo(() => {
+    const dataCopy = [...filteredData];
+    dataCopy.sort((a: any, b: any) => {
+      const aVal = a[sortConfig.key] ?? '';
+      const bVal = b[sortConfig.key] ?? '';
+      if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return dataCopy;
+  }, [filteredData, sortConfig]);
+
+  // Pagination state
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  // Reset to first page on data-affecting changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [sortConfig, appliedFilters, pageSize]);
+
+  const totalItems = sortedData.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIndex = (safePage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+  const pagedData = useMemo(() => sortedData.slice(startIndex, endIndex), [sortedData, startIndex, endIndex]);
+
+  useEffect(() => {
+    // Clamp page if filters reduce total pages
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [totalPages, currentPage]);
+
+  // Horizontal scroll floaters for wide tables
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollButtons = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  };
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    updateScrollButtons();
+    const onScroll = () => updateScrollButtons();
+    el.addEventListener('scroll', onScroll, { passive: true } as any);
+    const onResize = () => updateScrollButtons();
+    window.addEventListener('resize', onResize);
+    return () => {
+      el.removeEventListener('scroll', onScroll as any);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [scrollRef.current, pagedData, pageSize]);
+
+  const scrollByAmount = (dx: number) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    try {
+      (el as any).scrollBy({ left: dx, behavior: 'smooth' });
+    } catch {
+      el.scrollLeft += dx;
+    }
+  };
 
   const handleResetOpen = (record: any) => {
     const userId = record?.id ?? record?.user?.id ?? record?.user?.user?.id ?? null;
@@ -759,8 +877,9 @@ const PatientsComponent = () => {
   const isAddFormValid = useMemo(() => {
     const emailValid = !!email && email.includes('@');
     const nameValid = !!name && name.trim().length > 1;
-    return emailValid && nameValid;
-  }, [email, name]);
+    const phoneValid = !!addPhoneNumber && addPhoneNumber.trim().length > 0;
+    return emailValid && nameValid && phoneValid;
+  }, [email, name, addPhoneNumber]);
 
   const handleAddPatient = async (e: any) => {
     e.preventDefault();
@@ -780,7 +899,7 @@ const PatientsComponent = () => {
       const res = await fetch('/api/patients', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ email, name, date_of_birth: dob, userType: 'Patient', address: addAddress, zip: addZip, state_id: addStateId, city_id: addCityId })
+        body: JSON.stringify({ email, name, date_of_birth: dob, userType: 'Patient', address: addAddress, zip: addZip, state_id: addStateId, city_id: addCityId, phone_number: addPhoneNumber || null })
       });
       const json = await parseJSONSafe(res);
       if (json?.error) throw new Error(json.error);
@@ -789,7 +908,7 @@ const PatientsComponent = () => {
       } catch (e) {
         console.debug('[patients] hide add_patient failed', e);
       }
-      setEmail(''); setName(''); setDob(''); setAddAddress(''); setAddZip(''); setAddStateId(null); setAddCityId(null);
+      setEmail(''); setName(''); setDob(''); setAddPhoneNumber(''); setAddAddress(''); setAddZip(''); setAddStateId(null); setAddCityId(null);
       await fetchPatients();
       showToast('Patient added successfully', 'success');
     } catch (err: any) {
@@ -855,6 +974,7 @@ const PatientsComponent = () => {
     setEditName(record?.user_metadata?.name ?? '');
 
     setEditDob(record?.user_metadata?.date_of_birth ?? record?.user_metadata?.dob ?? record?.profile?.date_of_birth ?? record?.patient?.date_of_birth ?? '');
+    setEditPhoneNumber(record?.patient?.phone_number ?? record?.admin?.phone_number ?? record?.profile?.phone ?? '');
     setEditAddress(record?.patient?.address ?? '');
     setEditZip(record?.patient?.zip ?? '');
     setEditStateId(record?.patient?.state_id ?? null);
@@ -918,8 +1038,9 @@ const PatientsComponent = () => {
   const isEditFormValid = useMemo(() => {
     const emailValid = !!editEmail && editEmail.includes('@');
     const nameValid = !!editName && editName.trim().length > 1;
-    return emailValid && nameValid;
-  }, [editEmail, editName]);
+    const phoneValid = !!editPhoneNumber && editPhoneNumber.trim().length > 0;
+    return emailValid && nameValid && phoneValid;
+  }, [editEmail, editName, editPhoneNumber]);
 
   const handleEditSubmit = async (e: any) => {
     e.preventDefault();
@@ -933,7 +1054,7 @@ const PatientsComponent = () => {
       if (adminSecret) headers['x-admin-secret'] = adminSecret;
       setIsSavingEdit(true);
       setLoadingIds(prev => ({ ...prev, [userId]: true }));
-      const res = await fetch('/api/patients', { method: 'PATCH', headers, body: JSON.stringify({ action: 'edit', patientId: userId, email: editEmail, name: editName, date_of_birth: editDob, address: editAddress, zip: editZip, state_id: editStateId, city_id: editCityId }) });
+      const res = await fetch('/api/patients', { method: 'PATCH', headers, body: JSON.stringify({ action: 'edit', patientId: userId, email: editEmail, name: editName, date_of_birth: editDob, address: editAddress, zip: editZip, state_id: editStateId, city_id: editCityId, phone_number: editPhoneNumber }) });
       const json = await parseJSONSafe(res);
       if (json?.error) throw new Error(json.error);
       try {
@@ -941,6 +1062,7 @@ const PatientsComponent = () => {
       } catch (ee) { console.debug('[patients] hide edit_patient failed', ee); }
       setEditingPatient(null);
       setEditDob('');
+      setEditPhoneNumber('');
       setEditAddress(''); setEditZip(''); setEditStateId(null); setEditCityId(null);
       await fetchPatients();
       setLoadingIds(prev => { const c = { ...prev }; delete c[userId]; return c; });
@@ -959,140 +1081,162 @@ const PatientsComponent = () => {
 
   return (
     <>
-      <div className="page-wrapper">
+      <div className="page-wrapper patients-screen">
         <div className="content">
-          <div className="d-flex align-items-sm-center flex-sm-row flex-column gap-2 pb-3 mb-3 border-1 border-bottom">
+          <div className="d-flex align-items-center justify-content-between flex-wrap mb-3 pb-3 border-bottom patients-header">
             <div className="flex-grow-1">
-              <h4 className="fw-bold mb-0">
-                Patients
+              <h4 className="fw-bold mb-0 text-dark">
+                Patients{" "}
                 <span className="badge badge-soft-primary fw-medium border py-1 px-2 border-primary fs-13 ms-1">
                   Total Patients : {data.length}
                 </span>
               </h4>
             </div>
-            <div className="text-end d-flex">
-              {/* <div className="dropdown me-1">
-                <Link
-                  href="#"
-                  className="btn btn-md fs-14 fw-normal border bg-white rounded text-dark d-inline-flex align-items-center"
-                  data-bs-toggle="dropdown"
-                >
-                  Export
-                  <i className="ti ti-chevron-down ms-2" />
-                </Link>
-                <ul className="dropdown-menu p-2">
-                  <li>
-                    <Link className="dropdown-item" href="#">
-                      Download as PDF
-                    </Link>
-                  </li>
-                  <li>
-                    <Link className="dropdown-item" href="#">
-                      Download as Excel
-                    </Link>
-                  </li>
-                </ul>
-              </div> */}
+          </div>
 
-              {/* Filters toggle */}
+          {/* SEARCH BAR + TOOLBAR IN ONE LINE */}
+          <div className="d-flex align-items-center justify-content-between flex-wrap">
+            <div className="d-flex align-items-center flex-wrap">
+              <div className="table-search d-flex align-items-center mb-0">
+                <div className="search-input">
+                  <SearchInput value={searchText} onChange={handleSearch} />
+                </div>
+              </div>
+            </div>
+
+            {/* TOOLBAR BUTTONS TO THE RIGHT */}
+            <div className="patients-toolbar d-flex align-items-center flex-wrap gap-2">
+              {(
+                <div className="saved-search-dropdown dropdown">
+                  <button
+                    className="btn btn-darkish dropdown-toggle"
+                    type="button"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false"
+                  >
+                    <i className="ti ti-bookmark me-1" />
+                    {selectedSavedSearch
+                      ? savedSearches.find(s => s.id === selectedSavedSearch)?.name || 'Saved Searches'
+                      : 'Saved Searches'}
+                  </button>
+                  <ul className="dropdown-menu" style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    <li>
+                      <button
+                        className="dropdown-item text-muted"
+                        type="button"
+                        onClick={() => {
+                          setSelectedSavedSearch('');
+                          setFiltersDraft({ address: '', zip: '', stateId: '', cityId: '', status: '' });
+                          setAppliedFilters({ address: '', zip: '', stateId: '', cityId: '', status: '' });
+                        }}
+                      >
+                        <i className="ti ti-x me-2" />
+                        Clear Selection
+                      </button>
+                    </li>
+                    <li><hr className="dropdown-divider" /></li>
+                    {savedSearches.map(search => (
+                      <li key={search.id}>
+                        <div
+                          className="d-flex align-items-center justify-content-between px-3 py-2 saved-search-item"
+                          style={{ cursor: 'pointer', transition: 'background-color 0.2s' }}
+                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
+                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                        >
+                          <button
+                            className="btn btn-link text-start text-decoration-none flex-grow-1 p-0"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleApplySavedSearch(search.id);
+                              const dropdown = e.currentTarget.closest('.dropdown');
+                              if (dropdown) {
+                                const btn = dropdown.querySelector('[data-bs-toggle="dropdown"]') as HTMLElement;
+                                if (btn) btn.click();
+                              }
+                            }}
+                            style={{
+                              border: 'none',
+                              background: 'none',
+                              color: selectedSavedSearch === search.id ? '#0d6efd' : '#212529',
+                              fontWeight: selectedSavedSearch === search.id ? '600' : '400'
+                            }}
+                          >
+                            <i className={`ti ti-${selectedSavedSearch === search.id ? 'check' : 'bookmark'} me-2`} />
+                            {search.name}
+                          </button>
+                          <button
+                            className="btn btn-link text-danger p-0 ms-2"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSavedSearch(search.id);
+                            }}
+                            title="Delete this saved search"
+                            style={{ border: 'none', background: 'none', fontSize: '16px' }}
+                          >
+                            <i className="ti ti-trash" />
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <button
-                className="btn btn-outline-primary me-2 fs-13 btn-md"
-                onClick={() => {
-                  setShowFilters(s => {
-                    const next = !s;
-                    if (!s && typeof window !== 'undefined') {
-                      setTimeout(() => {
-                        try { document.querySelectorAll('.dropdown-menu.show').forEach(el => el.classList.remove('show')); } catch { }
-                        filtersPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                      }, 0);
-                    }
-                    return next;
-                  });
-                }}
+                className="btn btn-darkish btn-sm"
+                onClick={() => setShowFilters(s => !s)}
                 title="Toggle filters"
               >
                 <i className="ti ti-filter me-1" /> Filters
               </button>
 
-              {/* Grid Columns Modal */}
-              <div id="grid_columns_patients" className="modal fade" tabIndex={-1} aria-hidden="true">
-                <div className="modal-dialog modal-dialog-centered">
-                  <div className="modal-content grid-columns-modal">
-                    <div className="modal-header">
-                      <h5 className="modal-title">Manage Grid Columns</h5>
-                    </div>
-                    <div className="modal-body">
-                      {!visibleColIds ? (
-                        <div className="d-flex align-items-center"><span className="spinner-border spinner-border-sm me-2" /> Loading…</div>
-                      ) : (
-                        <div className="row g-2">
-                          {columns.map((col, idx) => {
-                            const id = getColId(col);
-                            const title = String(col?.title ?? id);
-                            const checked = visibleColIds.has(id);
-                            return (
-                              <div className="col-6" key={`${id}-${idx}`}>
-                                <div className="form-check">
-                                  <input className="form-check-input" type="checkbox" id={`gc_${id}`} checked={checked} onChange={(e) => {
-                                    const next = new Set(visibleColIds);
-                                    if (e.target.checked) next.add(id); else next.delete(id);
-                                    setVisibleColIds(next);
-                                  }} />
-                                  <label className="form-check-label" htmlFor={`gc_${id}`}>{title}</label>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                    <div className="modal-footer">
-                      <button type="button" className="btn btn-white border" onClick={() => { try { const el = document.getElementById('grid_columns_patients'); const bs = (window as any).bootstrap; if (bs?.Modal) bs.Modal.getOrCreateInstance(el!).hide(); else if (el) { el.classList.remove('show'); (el as any).style.display = 'none'; document.body.classList.remove('modal-open'); const bd = document.querySelector('.modal-backdrop'); bd && bd.remove(); } } catch { } }}>Cancel</button>
-                      <button type="button" className="btn btn-primary" onClick={handleSaveGridColumns} disabled={isSavingCols}>
-                        {isSavingCols ? <span className="spinner-border spinner-border-sm me-2" /> : null}
-                        Save
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              <button onClick={downloadTemplate} className="btn btn-light btn-sm" title="Download Template">
+                <i className="ti ti-download" />
+              </button>
 
-              {/* <div className="bg-white border shadow-sm rounded px-1 pb-0 text-center d-flex align-items-center justify-content-center">
-                <Link
-                  href={all_routes.patients}
-                  className="bg-light rounded p-1 d-flex align-items-center justify-content-center"
-                >
-                  <i className="ti ti-list fs-14 text-dark" />
-                </Link>
-                <Link
-                  href={all_routes.patientsGrid}
-                  className="bg-white rounded p-1 d-flex align-items-center justify-content-center"
-                >
-                  <i className="ti ti-layout-grid fs-14 text-body" />
-                </Link>
-              </div> */}
-              <button onClick={downloadTemplate} className="btn btn-secondary me-2 fs-13 btn-md d-flex align-items-center justify-content-center" title="Download Template" style={{ width: '40px', height: '38px', padding: '0' }}>
-                <i className="ti ti-download" style={{ fontSize: '18px' }} />
+              <button onClick={downloadCSV} className="btn btn-darkish btn-sm" title="Download CSV">
+                <i className="ti ti-file-download" />
               </button>
-              <button onClick={downloadCSV} className="btn btn-info me-2 fs-13 btn-md d-flex align-items-center justify-content-center" title="Download CSV" style={{ width: '40px', height: '38px', padding: '0' }}>
-                <i className="ti ti-file-download" style={{ fontSize: '18px' }} />
-              </button>
-              <label className="btn btn-warning me-2 fs-13 btn-md d-flex align-items-center justify-content-center" title="Upload CSV" style={{ cursor: isUploading ? 'not-allowed' : 'pointer', width: '40px', height: '38px', padding: '0', margin: '0' }}>
-                {isUploading ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> : <i className="ti ti-upload" style={{ fontSize: '18px' }} />}
-                <input type="file" accept=".csv" onChange={handleCSVUpload} disabled={isUploading} style={{ display: 'none' }} />
+
+              <label
+                className={`btn btn-darkish btn-sm ${isUploading ? 'disabled' : ''}`}
+                title="Upload CSV"
+                style={{ margin: 0 }}
+              >
+                {isUploading ? (
+                  <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                ) : (
+                  <i className="ti ti-upload" />
+                )}
+                <input
+                  type="file"
+                  accept=".csv"
+                  onChange={handleCSVUpload}
+                  disabled={isUploading}
+                  style={{ display: 'none' }}
+                />
               </label>
-              <button onClick={() => { try { const el = document.getElementById('grid_columns_patients'); const bs = (window as any).bootstrap; if (el && bs?.Modal) { bs.Modal.getOrCreateInstance(el).show(); } else if (el) { el.classList.add('show'); (el as any).style.display = 'block'; document.body.classList.add('modal-open'); if (!document.querySelector('.modal-backdrop')) { const backdrop = document.createElement('div'); backdrop.className = 'modal-backdrop fade show'; document.body.appendChild(backdrop); } } } catch { } }} className="btn btn-outline-secondary me-2 fs-13 btn-md d-flex align-items-center justify-content-center" title="Grid Columns" style={{ width: '40px', height: '38px', padding: '0' }}>
-                <i className="ti ti-columns-3" style={{ fontSize: '18px' }} />
+
+              <button
+                className="btn btn-light btn-sm"
+                onClick={() => showModalById('grid_columns_patients')}
+                title="Grid Columns"
+              >
+                <i className="ti ti-columns-3" />
               </button>
-              <a href="#" className="btn btn-primary fs-13 btn-md" onClick={(e) => { e.preventDefault(); const modalEl = document.getElementById('add_patient'); try { const bs = (window as any).bootstrap; if (modalEl && bs && bs.Modal) { bs.Modal.getOrCreateInstance(modalEl).show(); return; } if (modalEl) { modalEl.classList.add('show'); (modalEl as any).style.display = 'block'; document.body.classList.add('modal-open'); if (!document.querySelector('.modal-backdrop')) { const backdrop = document.createElement('div'); backdrop.className = 'modal-backdrop fade show'; document.body.appendChild(backdrop); } } } catch (err) { console.debug('[patients] open add_patient', err); } }}>
-                <i className="ti ti-plus me-1" />
-                New Patient
-              </a>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={(e) => { e.preventDefault(); showModalById('add_patient'); }}
+              >
+                <i className="ti ti-plus me-1" /> <span>New Patient</span>
+              </button>
             </div>
           </div>
 
           {showFilters && (
-            <div ref={filtersPanelRef} className="border rounded p-3 mb-3">
+            <div className="filter-panel border rounded p-3 mb-3">
               <div className="row g-3">
                 <div className="col-sm-6 col-md-3">
                   <label className="form-label">Address</label>
@@ -1104,19 +1248,21 @@ const PatientsComponent = () => {
                 </div>
                 <div className="col-sm-6 col-md-3">
                   <label className="form-label">State</label>
-                  <select className="form-select" value={filtersDraft.stateId} onChange={e => setFiltersDraft(prev => ({ ...prev, stateId: e.target.value, cityId: '' }))}>
-                    <option value="">All States</option>
-                    {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
+                  <SearchSelect
+                    options={[{ value: '', label: 'All States' }, ...stateOptions]}
+                    value={filtersDraft.stateId}
+                    onChange={(val) => setFiltersDraft(prev => ({ ...prev, stateId: String(val ?? ''), cityId: '' }))}
+                    placeholder="Search state..."
+                  />
                 </div>
                 <div className="col-sm-6 col-md-3">
                   <label className="form-label">City</label>
-                  <select className="form-select" value={filtersDraft.cityId} onChange={e => setFiltersDraft(prev => ({ ...prev, cityId: e.target.value }))}>
-                    <option value="">All Cities</option>
-                    {(cities || []).filter(c => !filtersDraft.stateId || String(c.state_id) === String(filtersDraft.stateId)).map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
+                  <SearchSelect
+                    options={[{ value: '', label: 'All Cities' }, ...cityOptionsFilter]}
+                    value={filtersDraft.cityId}
+                    onChange={(val) => setFiltersDraft(prev => ({ ...prev, cityId: String(val ?? '') }))}
+                    placeholder="Search city..."
+                  />
                 </div>
                 <div className="col-sm-6 col-md-3">
                   <label className="form-label">Status</label>
@@ -1140,106 +1286,210 @@ const PatientsComponent = () => {
             </div>
           )}
 
-          <div className="d-flex align-items-center justify-content-between flex-wrap">
-            <div>
-              <div className="search-set mb-3">
-                <div className="d-flex align-items-center flex-wrap gap-2">
-                  {savedSearches.length > 0 && (
-                    <div className="dropdown mb-0">
-                      <button
-                        className="btn btn-sm btn-outline-primary dropdown-toggle"
-                        type="button"
-                        data-bs-toggle="dropdown"
-                        aria-expanded="false"
-                        style={{ minWidth: '200px' }}
-                      >
-                        <i className="ti ti-bookmark me-1" />
-                        {selectedSavedSearch
-                          ? savedSearches.find(s => s.id === selectedSavedSearch)?.name || 'Saved Searches'
-                          : 'Saved Searches'}
-                      </button>
-                      <ul className="dropdown-menu" style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                        <li>
-                          <button
-                            className="dropdown-item text-muted"
-                            type="button"
-                            onClick={() => {
-                              setSelectedSavedSearch('');
-                              setFiltersDraft({ address: '', zip: '', stateId: '', cityId: '', status: '' });
-                              setAppliedFilters({ address: '', zip: '', stateId: '', cityId: '', status: '' });
-                            }}
-                          >
-                            <i className="ti ti-x me-2" />
-                            Clear Selection
-                          </button>
-                        </li>
-                        <li><hr className="dropdown-divider" /></li>
-                        {savedSearches.map(search => (
-                          <li key={search.id}>
-                            <div
-                              className="d-flex align-items-center justify-content-between px-3 py-2"
-                              style={{
-                                cursor: 'pointer',
-                                transition: 'background-color 0.2s'
-                              }}
-                              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#f8f9fa'}
-                              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
-                              <button
-                                className="btn btn-link text-start text-decoration-none flex-grow-1 p-0"
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleApplySavedSearch(search.id);
-                                  const dropdown = e.currentTarget.closest('.dropdown');
-                                  if (dropdown) {
-                                    const btn = dropdown.querySelector('[data-bs-toggle="dropdown"]') as HTMLElement;
-                                    if (btn) btn.click();
-                                  }
-                                }}
-                                style={{
-                                  border: 'none',
-                                  background: 'none',
-                                  color: selectedSavedSearch === search.id ? '#0d6efd' : '#212529',
-                                  fontWeight: selectedSavedSearch === search.id ? '600' : '400'
-                                }}
-                              >
-                                <i className={`ti ti-${selectedSavedSearch === search.id ? 'check' : 'bookmark'} me-2`} />
-                                {search.name}
-                              </button>
-                              <button
-                                className="btn btn-link text-danger p-0 ms-2"
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteSavedSearch(search.id);
-                                }}
-                                title="Delete this saved search"
-                                style={{ border: 'none', background: 'none', fontSize: '16px' }}
-                              >
-                                <i className="ti ti-trash" />
-                              </button>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+          {/* CUSTOM HTML TABLE WITH SCROLL WRAPPER (dynamic columns) */}
+          <div className="patients-table-container">
+            <div ref={scrollRef} className="table-responsive patients-scroll">
+              <table className="table table-striped table-hover align-middle patients-table">
+                <thead className="table-dark">
+                  <tr>
+                    {columnsFiltered.map((col: any, i: number) => {
+                      const sortKey = (col as any).sortKey as string | undefined;
+                      const isSorted = sortKey && sortConfig.key === sortKey;
+                      const clickable = !!sortKey;
+                      return (
+                        <th key={`h-${i}`} onClick={clickable ? () => handleSort(sortKey!) : undefined} style={{ whiteSpace: 'nowrap', cursor: clickable ? 'pointer' as const : 'default' }}>
+                          {col.title}{' '}
+                          {clickable ? (
+                            isSorted ? (sortConfig.direction === 'asc' ? <i className="ti ti-arrow-up" /> : <i className="ti ti-arrow-down" />) : <i className="ti ti-arrows-sort opacity-50" />
+                          ) : null}
+                        </th>
+                      );
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {sortedData.length === 0 ? (
+                    <tr>
+                      <td colSpan={columnsFiltered.length} className="text-center py-4 text-muted">No patients found</td>
+                    </tr>
+                  ) : (
+                    pagedData.map((r: any, idx: number) => (
+                      <tr key={r.id || idx}>
+                        {columnsFiltered.map((col: any, ci: number) => {
+                          const getVal = (obj: any, path?: string) => {
+                            if (!path) return undefined;
+                            return path.split('.').reduce((o: any, k: string) => (o ? o[k] : undefined), obj);
+                          };
+                          // Custom cells for Actions, Status, and Reset Password since they were previously custom-rendered
+                          if ((col.key || '').toString() === 'actions' || col.title === 'Actions') {
+                            return (
+                              <td key={`c-${idx}-${ci}`}>
+                                <div className="dropdown position-static">
+                                  <a href="#" className="text-dark" data-bs-toggle="dropdown" data-bs-boundary="viewport" onClick={(e) => e.preventDefault()}>
+                                    <i className="ti ti-dots-vertical" />
+                                  </a>
+                                  <ul className="dropdown-menu p-2">
+                                    <li><a href="#" className="dropdown-item" onClick={(e) => { e.preventDefault(); handleEditOpen(r); }}>Edit</a></li>
+                                    <li><a href="#" className="dropdown-item" onClick={(e) => { e.preventDefault(); handleShadowLogin(r); }}>Shadow Login</a></li>
+                                    <li><a href="#" className="dropdown-item text-danger" onClick={async (e) => { e.preventDefault(); await handleSoftDelete(r); }}>Delete</a></li>
+                                  </ul>
+                                </div>
+                              </td>
+                            );
+                          }
+                          if ((col.key || '').toString() === 'status' || col.title === 'Status') {
+                            const isActive = r?.patient?.is_active ?? r?.admin?.is_active ?? true;
+                            const userId = r?.id ?? r?.user?.id ?? r?.user?.user?.id;
+                            const isLoading = !!(userId && loadingIds[userId]);
+                            return (
+                              <td key={`c-${idx}-${ci}`}>
+                                <span
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={async (e) => { e.preventDefault(); await handleToggleActive(r); }}
+                                  className={`badge ${isActive ? 'badge-soft-success' : 'badge-soft-danger'} border ${isActive ? 'border-success' : 'border-danger'} px-2 py-1 fs-13 fw-medium`}
+                                  style={{ cursor: isLoading ? 'not-allowed' : 'pointer' }}
+                                  aria-disabled={isLoading}
+                                >
+                                  {isLoading ? <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> : (isActive ? 'Active' : 'Inactive')}
+                                </span>
+                              </td>
+                            );
+                          }
+                          if ((col.key || '').toString() === 'reset_password' || col.title === 'Reset Password') {
+                            return (
+                              <td key={`c-${idx}-${ci}`}>
+                                <a href="#" className="text-primary" onClick={(e) => { e.preventDefault(); handleResetOpen(r); }} title="Reset Password"><i className="ti ti-key" /></a>
+                              </td>
+                            );
+                          }
+                          const content = col.render ? col.render(getVal(r, col.dataIndex), r, idx) : (col.dataIndex ? (getVal(r, col.dataIndex) ?? '—') : '—');
+                          return <td key={`c-${idx}-${ci}`}>{content}</td>;
+                        })}
+                      </tr>
+                    ))
                   )}
-                  <div className="table-search d-flex align-items-center mb-0">
-                    <div className="search-input">
-                      <SearchInput value={searchText} onChange={handleSearch} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div className="d-flex table-dropdown mb-3 right-content align-items-center flex-wrap row-gap-3">
-              {/* keep existing filters/sort controls if desired */}
+                </tbody>
+              </table>
             </div>
           </div>
 
-          <div className="table-responsive">
-            <Datatable columns={columnsFiltered} dataSource={filteredData} Selection={false} searchText={searchText} />
+          {/* Pagination (left) */}
+          <div className="d-flex align-items-center gap-3 mt-2">
+            <div className="d-flex align-items-center gap-3">
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-muted">Items per page:</span>
+                <select
+                  className="form-select form-select-sm"
+                  style={{ width: 80 }}
+                  value={pageSize}
+                  onChange={(e) => setPageSize(parseInt(e.target.value, 10) || 10)}
+                >
+                  <option value={10}>10</option>
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+              <div className="text-muted">
+                {totalItems === 0 ? '0 – 0 of 0' : `${startIndex + 1} – ${endIndex} of ${totalItems}`}
+              </div>
+              <div className="pager-icons d-flex align-items-center gap-1">
+                <button className="icon-btn" disabled={safePage <= 1} onClick={() => setCurrentPage(1)} aria-label="First" title="First">
+                  <i className="ti ti-chevrons-left" />
+                </button>
+                <button className="icon-btn" disabled={safePage <= 1} onClick={() => setCurrentPage(p => Math.max(1, p - 1))} aria-label="Previous" title="Previous">
+                  <i className="ti ti-chevron-left" />
+                </button>
+                <button className="icon-btn" disabled={safePage >= totalPages} onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} aria-label="Next" title="Next">
+                  <i className="ti ti-chevron-right" />
+                </button>
+                <button className="icon-btn" disabled={safePage >= totalPages} onClick={() => setCurrentPage(totalPages)} aria-label="Last" title="Last">
+                  <i className="ti ti-chevrons-right" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Fixed bottom-right horizontal scroll floaters (double arrows) */}
+          {(canScrollLeft || canScrollRight) && (
+            <div className="hscroll-floaters">
+              {canScrollLeft && (
+                <button
+                  type="button"
+                  className="hscroll-btn"
+                  aria-label="Scroll left"
+                  onClick={() => {
+                    const el = scrollRef.current;
+                    const step = el ? Math.max(240, Math.floor(el.clientWidth * 0.8)) : 240;
+                    scrollByAmount(-step);
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true" style={{ transform: 'scaleX(-1)' }}>
+                    <path d="M2 12L12 6v12L2 12zM12 12l10-6v12l-10-6z" fill="currentColor"></path>
+                  </svg>
+                </button>
+              )}
+              {canScrollRight && (
+                <button
+                  type="button"
+                  className="hscroll-btn"
+                  aria-label="Scroll right"
+                  onClick={() => {
+                    const el = scrollRef.current;
+                    const step = el ? Math.max(240, Math.floor(el.clientWidth * 0.8)) : 240;
+                    scrollByAmount(step);
+                  }}
+                >
+                  <svg viewBox="0 0 24 24" width="32" height="32" aria-hidden="true">
+                    <path d="M2 12L12 6v12L2 12zM12 12l10-6v12l-10-6z" fill="currentColor"></path>
+                  </svg>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Grid Columns Modal */}
+          <div id="grid_columns_patients" className="modal fade" tabIndex={-1} aria-hidden="true">
+            <div className="modal-dialog modal-dialog-centered">
+              <div className="modal-content grid-columns-modal">
+                <div className="modal-header">
+                  <h5 className="modal-title">Manage Grid Columns</h5>
+                </div>
+                <div className="modal-body">
+                  {!visibleColIds ? (
+                    <div className="d-flex align-items-center"><span className="spinner-border spinner-border-sm me-2" /> Loading…</div>
+                  ) : (
+                    <div className="row g-2">
+                      {columns.map((col, idx) => {
+                        const id = getColId(col);
+                        const title = String(col?.title ?? id);
+                        const checked = visibleColIds.has(id);
+                        return (
+                          <div className="col-6" key={`${id}-${idx}`}>
+                            <div className="form-check">
+                              <input className="form-check-input" type="checkbox" id={`gc_${id}`} checked={checked} onChange={(e) => {
+                                const next = new Set(visibleColIds);
+                                if (e.target.checked) next.add(id); else next.delete(id);
+                                setVisibleColIds(next);
+                              }} />
+                              <label className="form-check-label" htmlFor={`gc_${id}`}>{title}</label>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-white border" onClick={() => hideModalById('grid_columns_patients')}>Cancel</button>
+                  <button type="button" className="btn btn-primary" onClick={handleSaveGridColumns} disabled={isSavingCols}>
+                    {isSavingCols ? <span className="spinner-border spinner-border-sm me-2" /> : null}
+                    Save
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div id="reset_password" className="modal fade">
@@ -1283,44 +1533,70 @@ const PatientsComponent = () => {
           </div>
 
           <div id="edit_patient" className="modal fade">
-            <div className="modal-dialog modal-dialog-centered">
-              <div className="modal-content tw-form">
-                <div className="modal-header">
-                  <h4 className="text-dark modal-title fw-bold">Edit Patient</h4>
-                  <button type="button" className="btn-close btn-close-modal custom-btn-close" data-bs-dismiss="modal" aria-label="Close"><i className="ti ti-x" /></button>
+            <div className="modal-dialog modal-md modal-dialog-centered">
+              <div className="modal-content patient-form-modal">
+                <div className="modal-header py-2 px-3 border-0 bg-teal-700 text-white rounded-top">
+                  <h5 className="modal-title fw-semibold">Edit Patient</h5>
                 </div>
                 <form onSubmit={handleEditSubmit}>
-                  <div className="modal-body">
-                    <div className="mb-3"><label className="form-label">Name <span className="text-danger">*</span></label><input type="text" className="form-control" value={editName} onChange={e => setEditName(e.target.value)} /></div>
-                    <div className="mb-3"><label className="form-label">Email <span className="text-danger">*</span></label><input type="email" className="form-control" value={editEmail} onChange={e => setEditEmail(e.target.value)} /></div>
-                    <div className="mb-3"><label className="form-label">Date of Birth <span className="text-danger">*</span></label><input type="date" className="form-control" value={editDob} onChange={e => setEditDob(e.target.value)} /></div>
-
-                    <div className="row">
-                      <div className="col-6 mb-3">
-                        <label className="form-label">State <span className="text-danger">*</span></label>
-                        <select className="form-control" value={editStateId ?? ''} onChange={e => { setEditStateId(e.target.value ? Number(e.target.value) : null); setEditCityId(null); }}>
-                          <option value="">-- Select State --</option>
-                          {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                      </div>
-                      <div className="col-6 mb-3">
-                        <label className="form-label">City <span className="text-danger">*</span></label>
-                        <select className="form-control" value={editCityId ?? ''} onChange={e => setEditCityId(e.target.value ? Number(e.target.value) : null)}>
-                          <option value="">-- Select City --</option>
-                          {(cities || []).filter(c => !editStateId || String(c.state_id) === String(editStateId)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                      </div>
+                  <div className="modal-body px-4 pt-3 pb-1">
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">Name: <span className="text-danger">*</span></label>
+                      <input type="text" className="form-control required-field" placeholder="Enter full name" value={editName} onChange={e => setEditName(e.target.value)} />
                     </div>
-                    <div className="row">
-                      <div className="col-6 mb-3"><label className="form-label">Address <span className="text-danger">*</span></label><textarea className="form-control" value={editAddress} onChange={e => setEditAddress(e.target.value)} /></div>
-                      <div className="col-6 mb-3"><label className="form-label">Zip <span className="text-danger">*</span></label><input className="form-control" value={editZip} onChange={e => setEditZip(e.target.value)} /></div>
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">Email: <span className="text-danger">*</span></label>
+                      <input type="email" className="form-control required-field" placeholder="Enter email address" value={editEmail} onChange={e => setEditEmail(e.target.value)} />
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">Phone Number: <span className="text-danger">*</span></label>
+                      <input type="text" className="form-control required-field" placeholder="e.g. +1234567890" value={editPhoneNumber} onChange={e => setEditPhoneNumber(e.target.value)} />
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">Date of Birth: <span className="text-danger">*</span></label>
+                      <input type="date" className="form-control required-field" placeholder="Select date of birth" value={editDob} onChange={e => setEditDob(e.target.value)} />
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">State: <span className="text-danger">*</span></label>
+                      <SearchSelect
+                        options={stateOptions}
+                        value={editStateId != null ? String(editStateId) : ''}
+                        onChange={(val) => { setEditStateId(val ? Number(val) : null); setEditCityId(null); }}
+                        placeholder="Search state..."
+                        inputClassName="required-field"
+                      />
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">City: <span className="text-danger">*</span></label>
+                      <SearchSelect
+                        options={cityOptionsEdit}
+                        value={editCityId != null ? String(editCityId) : ''}
+                        onChange={(val) => setEditCityId(val ? Number(val) : null)}
+                        placeholder="Search city..."
+                        inputClassName="required-field"
+                      />
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">Address: <span className="text-danger">*</span></label>
+                      <textarea className="form-control required-field" placeholder="Street, area" value={editAddress} onChange={e => setEditAddress(e.target.value)} />
+                    </div>
+                    <div className="form-row mb-0">
+                      <label className="form-label text-dark fw-semibold">Zip: <span className="text-danger">*</span></label>
+                      <input className="form-control required-field" placeholder="e.g. 12345" value={editZip} onChange={e => setEditZip(e.target.value)} />
                     </div>
                   </div>
-                  <div className="modal-footer d-flex align-items-center gap-1">
-                    <button type="button" className="btn btn-white border" data-bs-dismiss="modal" onClick={() => { try { hideModalById('edit_patient'); } catch (_) { } }}>Cancel</button>
-                    <button type="submit" className="btn btn-primary" disabled={!isEditFormValid || isSavingEdit}>
-                      {isSavingEdit ? <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> : null}
-                      Update Patient
+                  <div className="modal-footer border-top py-2 px-2.5 d-flex justify-content-end gap-2">
+                    <button type="button" className="btn btn-outline-danger px-3" data-bs-dismiss="modal" onClick={() => hideModalById('edit_patient')}>
+                      <i className="ti ti-x me-1"></i> Cancel
+                    </button>
+                    <button type="submit" className="btn btn-success px-4" disabled={!isEditFormValid || isSavingEdit}>
+                      {isSavingEdit ? (
+                        <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                      ) : (
+                        <>
+                          <i className="ti ti-device-floppy me-1"></i> Save Changes
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
@@ -1329,44 +1605,70 @@ const PatientsComponent = () => {
           </div>
 
           <div id="add_patient" className="modal fade">
-            <div className="modal-dialog modal-dialog-centered">
-              <div className="modal-content tw-form">
-                <div className="modal-header">
-                  <h4 className="text-dark modal-title fw-bold">Add Patient</h4>
-                  <button type="button" className="btn-close btn-close-modal custom-btn-close" data-bs-dismiss="modal" aria-label="Close"><i className="ti ti-x" /></button>
+            <div className="modal-dialog modal-md modal-dialog-centered">
+              <div className="modal-content patient-form-modal">
+                <div className="modal-header justify-content-center py-3 border-0 bg-teal-700 text-white rounded-top">
+                  <h5 className="modal-title fw-semibold text-center mb-0">Add New Patient</h5>
                 </div>
                 <form onSubmit={handleAddPatient}>
-                  <div className="modal-body">
-                    <div className="mb-3"><label className="form-label">Name <span className="text-danger">*</span></label><input type="text" className="form-control" value={name} onChange={e => setName(e.target.value)} /></div>
-                    <div className="mb-3"><label className="form-label">Email <span className="text-danger">*</span></label><input type="email" className="form-control" value={email} onChange={e => setEmail(e.target.value)} /></div>
-                    <div className="mb-3"><label className="form-label">Date of Birth <span className="text-danger">*</span></label><input type="date" className="form-control" value={dob} onChange={e => setDob(e.target.value)} /></div>
-
-                    <div className="row">
-                      <div className="col-6 mb-3">
-                        <label className="form-label">State <span className="text-danger">*</span></label>
-                        <select className="form-control" value={addStateId ?? ''} onChange={e => { setAddStateId(e.target.value ? Number(e.target.value) : null); setAddCityId(null); }}>
-                          <option value="">-- Select State --</option>
-                          {states.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                      </div>
-                      <div className="col-6 mb-3">
-                        <label className="form-label">City <span className="text-danger">*</span></label>
-                        <select className="form-control" value={addCityId ?? ''} onChange={e => setAddCityId(e.target.value ? Number(e.target.value) : null)}>
-                          <option value="">-- Select City --</option>
-                          {(cities || []).filter(c => !addStateId || String(c.state_id) === String(addStateId)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                      </div>
+                  <div className="modal-body px-4 pt-3 pb-1">
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">Name <span className="text-danger">*</span></label>
+                      <input type="text" className="form-control required-field" placeholder="Enter full name" value={name} onChange={e => setName(e.target.value)} />
                     </div>
-                    <div className="row">
-                      <div className="col-6 mb-3"><label className="form-label">Address <span className="text-danger">*</span></label><textarea className="form-control" value={addAddress} onChange={e => setAddAddress(e.target.value)} /></div>
-                      <div className="col-6 mb-3"><label className="form-label">Zip <span className="text-danger">*</span></label><input className="form-control" value={addZip} onChange={e => setAddZip(e.target.value)} /></div>
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">Email <span className="text-danger">*</span></label>
+                      <input type="email" className="form-control required-field" placeholder="Enter email address" value={email} onChange={e => setEmail(e.target.value)} />
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">Phone Number <span className="text-danger">*</span></label>
+                      <input type="text" className="form-control required-field" placeholder="e.g. +1234567890" value={addPhoneNumber} onChange={e => setAddPhoneNumber(e.target.value)} />
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">Date of Birth <span className="text-danger">*</span></label>
+                      <input type="date" className="form-control required-field" placeholder="Select date of birth" value={dob} onChange={e => setDob(e.target.value)} />
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">State <span className="text-danger">*</span></label>
+                      <SearchSelect
+                        options={stateOptions}
+                        value={addStateId != null ? String(addStateId) : ''}
+                        onChange={(val) => { setAddStateId(val ? Number(val) : null); setAddCityId(null); }}
+                        placeholder="Search state..."
+                        inputClassName="required-field"
+                      />
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">City <span className="text-danger">*</span></label>
+                      <SearchSelect
+                        options={cityOptionsAdd}
+                        value={addCityId != null ? String(addCityId) : ''}
+                        onChange={(val) => setAddCityId(val ? Number(val) : null)}
+                        placeholder="Search city..."
+                        inputClassName="required-field"
+                      />
+                    </div>
+                    <div className="form-row">
+                      <label className="form-label text-dark fw-semibold">Address <span className="text-danger">*</span></label>
+                      <textarea className="form-control required-field" placeholder="Street, area" value={addAddress} onChange={e => setAddAddress(e.target.value)} />
+                    </div>
+                    <div className="form-row mb-0">
+                      <label className="form-label text-dark fw-semibold">Zip <span className="text-danger">*</span></label>
+                      <input className="form-control required-field" placeholder="e.g. 12345" value={addZip} onChange={e => setAddZip(e.target.value)} />
                     </div>
                   </div>
-                  <div className="modal-footer d-flex align-items-center gap-1">
-                    <button type="button" className="btn btn-white border" data-bs-dismiss="modal" onClick={() => { try { hideModalById('add_patient'); } catch (_) { } }}>Cancel</button>
-                    <button type="submit" className="btn btn-primary" disabled={!isAddFormValid || isAdding}>
-                      {isAdding ? <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> : null}
-                      Add Patient
+                  <div className="modal-footer border-top py-2 px-2.5 d-flex justify-content-end gap-2">
+                    <button type="button" className="btn btn-outline-danger px-3" data-bs-dismiss="modal" onClick={() => hideModalById('add_patient')}>
+                      <i className="ti ti-x me-1"></i> Cancel
+                    </button>
+                    <button type="submit" className="btn btn-success px-4" disabled={!isAddFormValid || isAdding}>
+                      {isAdding ? (
+                        <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                      ) : (
+                        <>
+                          <i className="ti ti-device-floppy me-1"></i> Add New Patient
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>

@@ -5,7 +5,7 @@ const routes = all_routes;
 
 export const NurseSidebarData = [
     {
-        tittle: "Nursing Portal",
+
         icon: "airplay",
         showAsTab: true,
         separateRoute: false,
@@ -19,14 +19,13 @@ export const NurseSidebarData = [
                 submenuItems: [],
             },
             {
-                label: "Bookings", // Focused on Home Health Care
+                label: "Availability", // Focused on Home Health Care
                 link: "#",
-                submenu: true,
+                submenu: false,
                 icon: "calendar-event",
-                base: "bookings",
+                base: "availability",
                 submenuItems: [
-                    { label: "Add Appointment", link: "/nurse/bookings/add" }, // Placeholder
-                    { label: "View Appointments", link: routes.appointments }, // Grid/Calendar view for nurse
+
                 ],
             },
             {
@@ -35,54 +34,6 @@ export const NurseSidebarData = [
                 submenu: false,
                 icon: "directions", // Example icon
                 base: "allocation",
-                submenuItems: [],
-            },
-            {
-                label: "Availability",
-                link: "#",
-                submenu: false,
-                icon: "calendar-time",
-                base: "availability",
-                submenuItems: [],
-            },
-            {
-                label: "Profile",
-                link: "#",
-                submenu: false,
-                icon: "user-circle",
-                base: "profile",
-                submenuItems: [],
-            },
-            {
-                label: "Services", // Specific nursing services
-                link: "#",
-                submenu: false,
-                icon: "heart-rate-monitor", // Example icon
-                base: "services",
-                submenuItems: [],
-            },
-            {
-                label: "Patients", // Link to list or specific dashboard view
-                link: "#",
-                submenu: false,
-                icon: "user-heart",
-                base: "patients",
-                submenuItems: [],
-            },
-            {
-                label: "Billing",
-                link: "#",
-                submenu: false,
-                icon: "file-invoice-dollar",
-                base: "billing",
-                submenuItems: [],
-            },
-            {
-                label: "Documents",
-                link: "#",
-                submenu: false,
-                icon: "file-stack",
-                base: "documents",
                 submenuItems: [],
             },
             {
