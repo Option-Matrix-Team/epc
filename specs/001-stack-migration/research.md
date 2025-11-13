@@ -6,7 +6,7 @@
 
 ## Overview
 
-This document consolidates research findings and architectural decisions for implementing authentication in the EMR system using Supabase Auth with Next.js 16 App Router.
+This document consolidates research findings and architectural decisions for implementing authentication in the Option Matrix using Supabase Auth with Next.js 16 App Router.
 
 ## Research Areas
 

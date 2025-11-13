@@ -375,6 +375,18 @@ function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
       data-sidebar="content"
       className={cn(
         "flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
+        // Custom scrollbar styles - light and only visible on hover
+        "[&::-webkit-scrollbar]:w-1.5",
+        "[&::-webkit-scrollbar-track]:bg-transparent",
+        "[&::-webkit-scrollbar-thumb]:bg-transparent",
+        "[&::-webkit-scrollbar-thumb]:rounded-full",
+        "hover:[&::-webkit-scrollbar-thumb]:bg-gray-300",
+        "hover:[&::-webkit-scrollbar-thumb]:hover:bg-gray-400",
+        // Firefox scrollbar
+        "scrollbar-thin",
+        "scrollbar-track-transparent",
+        "scrollbar-thumb-transparent",
+        "hover:scrollbar-thumb-gray-300",
         className
       )}
       {...props}
@@ -569,7 +581,7 @@ function SidebarMenuAction({
         "peer-data-[size=lg]/menu-button:top-2.5",
         "group-data-[collapsible=icon]:hidden",
         showOnHover &&
-          "peer-data-[active=true]/menu-button:text-sidebar-accent-foreground group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 md:opacity-0",
+        "peer-data-[active=true]/menu-button:text-sidebar-accent-foreground group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 md:opacity-0",
         className
       )}
       {...props}

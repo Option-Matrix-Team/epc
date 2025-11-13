@@ -3,7 +3,7 @@
 **Feature Branch**: `001-stack-migration`  
 **Created**: 2025-11-12  
 **Status**: Draft  
-**Input**: User description: "Migrate EMR system from Bootstrap/Preclinic theme to shadcn/Tailwind stack, preserving existing functionality from legacy codebase"
+**Input**: User description: "Migrate Option Matrix from Bootstrap/Preclinic theme to shadcn/Tailwind stack, preserving existing functionality from legacy codebase"
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -31,7 +31,7 @@ Healthcare staff (doctors, nurses, technicians, administrators) need to securely
 
 Healthcare staff need to register new patients, view patient records, update patient information, and search for patients quickly. This is the core data entity around which clinical workflows revolve.
 
-**Why this priority**: Patient records are the central entity in an EMR system. Without patient management, no clinical documentation, appointments, or treatments can be recorded.
+**Why this priority**: Patient records are the central entity in an Option Matrix. Without patient management, no clinical documentation, appointments, or treatments can be recorded.
 
 **Independent Test**: Can be fully tested by creating patients, viewing patient lists, searching patients, editing patient details, and viewing patient profiles without implementing appointments or clinical notes.
 

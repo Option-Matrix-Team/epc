@@ -4,7 +4,7 @@ import { AppSidebar } from '@/components/app-sidebar'
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar'
 import { createClient } from '@/lib/supabase/server'
 
-export default async function DashboardLayout({
+export default async function AuthenticationLayout({
     children,
 }: {
     children: React.ReactNode

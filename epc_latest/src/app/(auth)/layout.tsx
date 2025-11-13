@@ -10,7 +10,7 @@ export default function AuthLayout({
             <div className="min-h-screen bg-background">
                 {children}
             </div>
-            <Toaster />
+            <Toaster position="top-right" />
         </>
     )
 }

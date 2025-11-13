@@ -6,7 +6,7 @@
 
 ## Overview
 
-This document defines the database schema, data flows, and state management for authentication in the EMR system.
+This document defines the database schema, data flows, and state management for authentication in the Option Matrix.
 
 ## Database Schema
 

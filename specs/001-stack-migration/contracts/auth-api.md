@@ -6,7 +6,7 @@
 
 ## Overview
 
-This document defines the API contracts for authentication operations. The EMR system uses Supabase Auth as the backend, so most authentication is handled via Supabase client SDK calls rather than custom API routes. This document covers both Supabase SDK methods and our custom API routes.
+This document defines the API contracts for authentication operations. The Option Matrix uses Supabase Auth as the backend, so most authentication is handled via Supabase client SDK calls rather than custom API routes. This document covers both Supabase SDK methods and our custom API routes.
 
 ---
 
